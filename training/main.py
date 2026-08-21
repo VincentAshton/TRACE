@@ -10,6 +10,7 @@ import argparse
 import os
 import math
 import sys
+import warnings
 from tqdm import tqdm
 
 import torch
@@ -40,12 +41,17 @@ from utils.ds_utils import get_train_ds_config
 from utils.module.lora import convert_linear_layer_to_lora, convert_lora_to_linear_layer, only_optimize_lora_parameters
 from utils.model.model_utils import create_hf_model
 
-# add flash attention
-from utils.flash_attention.llama_flash_att import replace_llama_attn_with_flash_attn
-from utils.flash_attention.bloom_flash_att import replace_bloom_attn_with_flash_attn
-
-replace_llama_attn_with_flash_attn()
-replace_bloom_attn_with_flash_attn()
+# FlashAttention is an optional performance optimization. Fall back to the
+# standard Hugging Face attention implementation when it is unavailable or
+# incompatible with the installed Transformers version.
+try:
+    from utils.flash_attention.llama_flash_att import replace_llama_attn_with_flash_attn
+    from utils.flash_attention.bloom_flash_att import replace_bloom_attn_with_flash_attn
+except (ImportError, AttributeError) as exc:
+    warnings.warn(f"FlashAttention disabled; using standard attention: {exc}")
+else:
+    replace_llama_attn_with_flash_attn()
+    replace_bloom_attn_with_flash_attn()
 
 # my_peft中修改了lora相关的逻辑
 from model.Replay.LFPT5 import getInitialPrompt
@@ -389,10 +395,22 @@ def main():
         optimizer_grouped_parameters = get_optimizer_grouped_parameters(
             model, args.weight_decay)
 
-        AdamOptimizer = DeepSpeedCPUAdam if args.offload else FusedAdam
-        optimizer = AdamOptimizer(optimizer_grouped_parameters,
-                                lr=args.learning_rate,
-                                betas=(0.9, 0.95))
+        if args.offload:
+            optimizer = DeepSpeedCPUAdam(optimizer_grouped_parameters,
+                                         lr=args.learning_rate,
+                                         betas=(0.9, 0.95))
+        else:
+            try:
+                optimizer = FusedAdam(optimizer_grouped_parameters,
+                                      lr=args.learning_rate,
+                                      betas=(0.9, 0.95))
+            except (OSError, RuntimeError) as exc:
+                warnings.warn(
+                    "DeepSpeed FusedAdam is unavailable; falling back to "
+                    f"torch.optim.AdamW: {exc}")
+                optimizer = torch.optim.AdamW(optimizer_grouped_parameters,
+                                              lr=args.learning_rate,
+                                              betas=(0.9, 0.95))
         
         total_train_dataloader_len = sum(len(train_task_list[task]) for task in list(train_task_list.keys()))
         num_update_steps_per_epoch = math.ceil(

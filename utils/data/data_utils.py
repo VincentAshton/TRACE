@@ -239,6 +239,14 @@ class PromptDataset(Dataset):
             "answer": self.answer_dataset[idx]
         }
 
+
+def load_prompt_dataset(path):
+    """Load a TRACE-created PromptDataset with PyTorch 2.6+ safely."""
+    if hasattr(torch.serialization, "safe_globals"):
+        with torch.serialization.safe_globals([PromptDataset]):
+            return torch.load(path)
+    return torch.load(path)
+
 # 根据传入的sampls，调用dataset object，获取数据想要的部分,tokenize
 def get_prompt_dataset(current_dataset, raw_dataset, add_sys_prefix=False, sample_ratio=None):
     prompt_dataset = []
@@ -326,4 +334,6 @@ def create_prompt_dataset(local_rank,
 
     if distributed:
         torch.distributed.barrier()
-    return torch.load(train_fname), torch.load(eval_fname), torch.load(test_fname)
+    return (load_prompt_dataset(train_fname),
+            load_prompt_dataset(eval_fname),
+            load_prompt_dataset(test_fname))

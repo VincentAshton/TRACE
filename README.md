@@ -1,5 +1,28 @@
 # 🌟 TRACE: A Comprehensive Benchmark for Continual Learning in Large Language Models
 
+## 📝 本仓库的补充工作（Fork 说明）
+
+本仓库在 [原版 TRACE](https://github.com/BeyonderXX/TRACE) 基础上，增加了「Replay 方法回放比例下降阈值」实验。
+
+**实验目标**
+
+复现论文中的 Replay 训练方法，并在 3 个 7B 模型（LLaMA-2-7B-chat、Vicuna-7B、Baichuan2-7B）上扫描低于 10% 的回放比例（0.01 / 0.02 / 0.05 / 0.08，以 10% 为基线），找出使 OP（Overall Performance）与 BWT（Backward Transfer）首次跌破基线的「下降阈值」。
+
+**工程改动**
+
+- 依赖适配：transformers / datasets / evaluate 新版，fuzzywuzzy→rapidfuzz
+- 修复：ZeRO-3 checkpoint 保存目录、flash-attn fp32 回退、bf16 加载（修 OOM）
+- 提速：FlashAttention-2、per_device 4、4 卡并行推理（batch 16）
+- 新增脚本：并行推理、OP/BWT 聚合、15 组扫描、守门自动续跑
+
+**关键文档**
+
+| 文档 | 说明 |
+|---|---|
+| [RUNBOOK.md](RUNBOOK.md) | 运行手册：环境、数据、逐步骤命令 |
+| [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) | 实验记录：设计、超参、进度、结果 |
+| [scripts/](scripts/) | 实验脚本（训练 / 并行推理 / 聚合 / 扫描） |
+
 ## 💥 Trace Benchmark
 
 <div align=center><img src="./assets/TRACE.jpg" width="80%" /></div>

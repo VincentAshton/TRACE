@@ -4,8 +4,7 @@
 
 import re
 from rouge import Rouge
-from fuzzywuzzy import fuzz
-from datasets import load_metric
+from rapidfuzz import fuzz
 from nltk.translate.bleu_score import sentence_bleu
 
 
@@ -139,6 +138,7 @@ def caculate_fuzz(results, data):
 ## SARI
 ########################
 def caculate_sari(inputs, results, data):
-    sari = load_metric("sari")
-    translation_result = sari.compute(sources=inputs, predictions=results, references=[[label] for label in data]),
-    return translation_result
+    import evaluate
+    sari = evaluate.load("sari")
+    translation_result = sari.compute(sources=inputs, predictions=results, references=[[label] for label in data])
+    return translation_result["sari"]

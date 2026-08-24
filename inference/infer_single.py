@@ -142,6 +142,14 @@ def parse_args():
     parser.add_argument('--CL_method',
             default=None,
             help='continual learning method used')
+    parser.add_argument('--round_start',
+                        type=int,
+                        default=0,
+                        help='first round to evaluate (inclusive); for parallel inference')
+    parser.add_argument('--round_end',
+                        type=int,
+                        default=10**9,
+                        help='last round to evaluate (exclusive); for parallel inference')
 
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
@@ -216,7 +224,8 @@ def main():
     # TODO, modify left pad for training and inference
     inference_tasks = args.inference_tasks 
     task_num = len(inference_tasks)
-    for round in range(task_num):   # load models and adapters of a new round in continual learning
+    round_end = min(args.round_end, task_num)
+    for round in range(args.round_start, round_end):   # load models and adapters of a new round in continual learning
         inference_model_path = os.path.join(args.inference_model_path, str(round))
         print_rank_0("Inference Model Path: " + inference_model_path, args.local_rank)
 
@@ -289,6 +298,11 @@ def main():
 
         for inference_task_id in range(round+1):    # evaluation for previous tasks in a single round
             inference_task = inference_tasks[inference_task_id]
+            out_fn = os.path.join(args.inference_output_path,
+                                  f"results-{round}-{inference_task_id}-{inference_task}.json")
+            if os.path.exists(out_fn):
+                print(f"[skip] {out_fn} already exists")
+                continue
             dataset_path = os.path.join(args.data_path, inference_task)
             # Prepare the data
             _, _, infer_dataset = create_prompt_dataset(

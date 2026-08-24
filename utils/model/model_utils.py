@@ -31,11 +31,18 @@ def create_hf_model(model_class,
     else:
         dschf = None
 
+    model_kwargs = {}
+    attn_impl = os.environ.get("ATTN_IMPL", "").strip()
+    if attn_impl:
+        model_kwargs["attn_implementation"] = attn_impl
+    # load in bf16: halves memory and lets flash-attn actually engage (fp32 would fall back to eager)
+    model_kwargs["torch_dtype"] = torch.bfloat16
     model = model_class.from_pretrained(
         model_name_or_path,
         from_tf=bool(".ckpt" in model_name_or_path),
         config=model_config,
-        trust_remote_code=True)
+        trust_remote_code=True,
+        **model_kwargs)
 
     # llama use eos_token_id but not end_token_id
     model.config.end_token_id = tokenizer.eos_token_id

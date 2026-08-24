@@ -1,35 +1,25 @@
-datasets>=2.8.0
-sentencepiece>=0.1.97
-accelerate>=0.15.0
-deepspeed>=0.9.0
-huggingface-hub==0.16.4
-ninja==1.11.1
-tokenizers==0.13.3
-transformers==4.31.0
-numpy==1.25.2
-nvidia-cublas-cu11==11.10.3.66
-nvidia-cuda-cupti-cu11==11.7.101
-nvidia-cuda-nvrtc-cu11==11.7.99
-nvidia-cuda-runtime-cu11==11.7.99
-nvidia-cudnn-cu11==8.5.0.96
-nvidia-cufft-cu11==10.9.0.58
-nvidia-curand-cu11==10.2.10.91
-nvidia-cusolver-cu11==11.4.0.1
-nvidia-cusparse-cu11==11.7.4.91
-nvidia-nccl-cu11==2.14.3
-nvidia-nvtx-cu11==11.7.91
-protobuf==4.23.4
-tensorboard==2.14.0
-tensorboard-data-server==0.7.1
-Jinja2==3.1.2
-multiprocess==0.70.15
-networkx==3.1
-nltk==3.5
-rouge==1.0.1
-fuzzywuzzy
-quadprog
-peft
-rouge
-qpth
+# TRACE Replay reproduction — modernized dependencies.
+# Original pinned torch 2.0.1 / transformers 4.31 / CUDA 11.7 wheels (incompatible with CUDA 12.x cloud).
+# Install torch FIRST for your CUDA version, e.g.:
+#   pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+#   (or cu121 / cu126 / cu128 depending on the machine)
+transformers>=4.40,<4.47
+deepspeed>=0.14
+accelerate>=0.28
+datasets>=2.18
+evaluate>=0.4.1
+peft>=0.10
+sentencepiece>=0.1.99
+protobuf>=4.25
+tokenizers>=0.15
+numpy
+nltk>=3.8
+rouge>=1.0.1
+rapidfuzz>=3.0
 sacrebleu
 sacremoses
+tensorboard
+huggingface_hub>=0.20
+ninja
+qpth
+quadprog

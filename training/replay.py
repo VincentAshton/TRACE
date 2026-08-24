@@ -41,12 +41,15 @@ from utils.ds_utils import get_train_ds_config
 from utils.module.lora import convert_linear_layer_to_lora, convert_lora_to_linear_layer, only_optimize_lora_parameters
 from utils.model.model_utils import create_hf_model
 
-# add flash attention
-from utils.flash_attention.llama_flash_att import replace_llama_attn_with_flash_attn
-from utils.flash_attention.bloom_flash_att import replace_bloom_attn_with_flash_attn
-
-replace_llama_attn_with_flash_attn()
-replace_bloom_attn_with_flash_attn()
+# add flash attention (optional; modern transformers has native flash attention support,
+# and this monkey-patch is not compatible with newer transformers — degrade gracefully)
+try:
+    from utils.flash_attention.llama_flash_att import replace_llama_attn_with_flash_attn
+    from utils.flash_attention.bloom_flash_att import replace_bloom_attn_with_flash_attn
+    replace_llama_attn_with_flash_attn()
+    replace_bloom_attn_with_flash_attn()
+except Exception as e:
+    print(f"[WARN] flash attention monkey-patch skipped: {e}")
 
 # my_peft中修改了lora相关的逻辑
 from model.Replay.LFPT5 import getInitialPrompt
@@ -465,16 +468,18 @@ def main():
         if args.output_dir is not None:
             print_rank_0('saving model ...', args.global_rank)
 
-        if args.global_rank == 0:
-            save_hf_format(model, tokenizer, args, sub_folder=str(round))
-
         if args.zero_stage == 3:
-            # For zero stage 3, each gpu only has a part of the model, so we need a special save function
+            # zero stage 3: weights are partitioned; use the gather-based save.
+            # (fixed: pass sub_folder so each round saves to its own dir)
             save_zero_three_model(model,
                                   args.global_rank,
                                   args.output_dir,
-                                  zero_stage=args.zero_stage)
-        print_rank_0('Sucessful saving model after round {}'.format(round), args.global_rank)
+                                  zero_stage=args.zero_stage,
+                                  sub_folder=str(round))
+        else:
+            if args.global_rank == 0:
+                save_hf_format(model, tokenizer, args, sub_folder=str(round))
+        print_rank_0('Successfully saving model after round {}'.format(round), args.global_rank)
 
 
     for i_task, task in enumerate(train_task_list):

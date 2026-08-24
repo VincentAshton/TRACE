@@ -43,27 +43,19 @@ class MovingAverage:
 
 
 def load_hf_tokenizer(model_name_or_path, fast_tokenizer=True):
-    if "llama" in model_name_or_path:
-        from transformers.models.llama import LlamaTokenizer
-        tokenizer = LlamaTokenizer.from_pretrained(
-            model_name_or_path, fast_tokenizer=fast_tokenizer)
-        if tokenizer.pad_token is None:
-            # assert tokenizer.eos_token is not None
-            tokenizer.add_special_tokens({'pad_token': tokenizer.unk_token})
-            # tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-            tokenizer.padding_side = 'left'
-    else:
+    # Modern transformers deprecated LlamaTokenizer in favor of AutoTokenizer.
+    try:
         tokenizer = AutoTokenizer.from_pretrained(
             model_name_or_path, fast_tokenizer=fast_tokenizer, trust_remote_code=True)
-        tokenizer.pad_token = tokenizer.eos_token
-        # for falcon
-        if tokenizer.bos_token is None:
-            tokenizer.bos_token = tokenizer.eos_token
-        # make sure tokenizer is right pad in our logic
-        tokenizer.padding_side = 'left'
-
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name_or_path, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token is not None else tokenizer.unk_token
+    if tokenizer.bos_token is None:
+        tokenizer.bos_token = tokenizer.eos_token
+    tokenizer.padding_side = 'left'
     tokenizer.truncation_side = "left"
-
     return tokenizer
 
 

@@ -1,12 +1,18 @@
 # TRACE Replay 复现 + 回放比例下降阈值实验 — 运行手册
 
+> ⚠️ **2026-08-24 更新**：实际运行环境与下文第 2/4 节的「初始方案」不同——
+> 实际用 **3 个 7B 模型 × 5 比例 = 15 组**（13B 已取消），4×A100-80GB 租用实例，
+> 脚本用 `run_replay_fast.sh`（梯度检查点**开启**、bf16 + flash-attn-2、4 卡并行推理），
+> 输出在 `/dev/shm/outputs/`（内存盘），结果持久化 `/root/results/`。
+> 权威最新状态见 [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)。
+
 ## 1. 实验设计
 
-- 5 个模型：LLaMA-2-7B/13B-Chat、Vicuna-7B/13B-v1.5、Baichuan2-7B-Chat
-- 扫描 past_task_ratio ∈ {0.01, 0.02, 0.05, 0.08}（论文 Replay 基线 = 0.10）
+- 3 个 7B 模型：LLaMA-2-7B-Chat、Vicuna-7B-v1.5、Baichuan2-7B-Chat（13B 已取消）
+- 扫描 past_task_ratio ∈ {0.10（基线）, 0.08, 0.05, 0.02, 0.01}
 - 每个 (模型, 比例) 跑一遍完整 8 任务顺序 Replay 训练 + 推理，算 OP/BWT
-- 与论文 Table 1 的 Replay 基线（10%）对比，找「下降阈值」（OP/BWT 首次低于 10% 基线的比例）
-- 共 20 组训练（5 模型 × 4 比例）
+- 以「自己环境跑的 10%」为基线（option B），找「下降阈值」（OP/BWT 首次跌破 10% 基线的比例）
+- 共 15 组训练（3 模型 × 5 比例）
 
 ## 2. 租卡要求（重要）
 

@@ -62,7 +62,7 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 
 | 模型 | 0.10（基线）| 0.08 | 0.05 | 0.02 | 0.01 | 下降阈值 |
 |---|---|---|---|---|---|---|
-| llama2-7b-chat | — | — | — | — | — | — |
+| llama2-7b-chat | 0.544 / +0.077 | — | — | — | — | — |
 | vicuna-7b | — | — | — | — | — | — |
 | baichuan2-7b | — | — | — | — | — | — |
 
@@ -74,7 +74,7 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 
 ## 9. 运行状态（快照 2026-08-24）
 
-- 实验**进行中**：llama2-7b-chat ratio=0.10 云端训练，2026-08-24 已完成 6/8 任务，正在跑最后一个任务 20Minuten。
+- 实验**进行中**：llama2-7b-chat ratio=0.10 已于 2026-08-24 22:00 完成（**OP=0.544 / BWT=+0.077**，论文 0.555 / 0.026），watcher 22:01 触发 sweep，正在训练 ratio=0.08（新顺序 0.10→0.08→0.05→0.02→0.01）。
 - 训练完成后自动流程：4 卡并行推理 → 聚合 op_bwt.json → 守门脚本 watcher.sh 自动启动剩余 14 组扫描（3 模型 × 5 比例，含本组）。
 - 云端关键路径：模型 `/dev/shm/hf/`，输出 `/dev/shm/outputs/`，结果持久化 `/root/results/`。
 - 运行细节与命令见 [RUNBOOK.md](RUNBOOK.md)。

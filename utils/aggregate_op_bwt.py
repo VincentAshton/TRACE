@@ -29,6 +29,9 @@ PRIMARY_METRIC = {
     "20Minuten": "sari",
 }
 
+# tasks whose primary metric is on a 0-100 scale (similarity / SARI); normalize to 0-1 for OP/BWT
+SCALE_100 = {"Py150", "20Minuten"}
+
 DEFAULT_TASKS = ["C-STANCE", "FOMC", "MeetingBank", "Py150",
                  "ScienceQA", "NumGLUE-cm", "NumGLUE-ds", "20Minuten"]
 
@@ -40,12 +43,13 @@ def extract_primary(eval_dict, task):
     val = eval_dict[key]
     # robustness: sari may be nested ({"sari": x} or [{"sari": x}]) from older code
     if isinstance(val, dict):
-        return val.get("sari", val.get(key))
-    if isinstance(val, (list, tuple)) and len(val) > 0:
+        val = val.get("sari", val.get(key))
+    elif isinstance(val, (list, tuple)) and len(val) > 0:
         v = val[0]
-        if isinstance(v, dict):
-            return v.get("sari", v.get(key))
-        return v
+        val = v.get("sari", v.get(key)) if isinstance(v, dict) else v
+    # normalize 0-100 metrics (similarity / SARI) to 0-1 so OP/BWT are comparable
+    if task in SCALE_100 and isinstance(val, (int, float)):
+        val = val / 100.0
     return val
 
 

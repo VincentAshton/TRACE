@@ -89,6 +89,11 @@ python scripts/summary.py --out_root outputs
    比较下降阈值时建议看 ≥1% 量级的差异。
 5. **原仓库 bug 已修**：zero_stage=3 保存目录错误、SARI 指标返回 tuple、
    params.py 导入 quadprog/qpth 强依赖（改为可选导入）。
+6. **OP/BWT 量纲 bug 已修（2026-08-24）**：`utils/aggregate_op_bwt.py` 原先把
+   Py150 similarity（0-100）和 20Minuten SARI（0-100）与 0-1 量纲指标直接平均，
+   得到 OP≈12 的错误值。已在 `extract_primary` 加 `SCALE_100` 集合对这两个任务
+   /100 归一化。修复后 llama2-7b 10% 基线 OP=0.544/BWT=+0.077（论文 0.555/0.026，
+   差 ~2% 属 4 卡 vs 8 卡环境偏移）。云端已同步修复，后续组自动生效。
 
 ## 7. 成本估算（粗略，仅供参考）
 

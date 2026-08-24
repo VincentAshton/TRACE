@@ -13,7 +13,7 @@ MODELS=(
   "baichuan2-7b|/dev/shm/hf/baichuan2-7b-chat"
 )
 
-RATIOS="0.10 0.01 0.02 0.05 0.08"
+RATIOS="0.10 0.08 0.05 0.02 0.01"
 OUT_ROOT="${OUT_ROOT:-$REPO_DIR/outputs}"
 
 for entry in "${MODELS[@]}"; do

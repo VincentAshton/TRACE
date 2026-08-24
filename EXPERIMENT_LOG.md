@@ -49,7 +49,7 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 | 每任务 epoch | 5,3,7,5,3,5,5,7（对应 8 个任务）|
 | 精度 / 注意力 | bf16 + flash-attention 2 |
 | ZeRO | stage 3 |
-| 梯度检查点 | 关闭（7B 显存充足）|
+| 梯度检查点 | 开启（长句任务 FOMC/MeetingBank/Py150 + Lima 回放必须开，否则 4 卡 OOM 爆 78G）|
 | 序列长度 | max_prompt_len=1024, max_ans_len=512 |
 
 ## 6. 环境
@@ -71,3 +71,10 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 ## 8. 下降阈值结论
 
 （待全部跑完后填写：每个模型 OP/BWT 首次跌破 10% 基线的最大比例，即最接近 10% 的那个下降比例）
+
+## 9. 运行状态（快照 2026-08-24）
+
+- 实验**进行中**：llama2-7b-chat ratio=0.10 云端训练，2026-08-24 已完成 6/8 任务，正在跑最后一个任务 20Minuten。
+- 训练完成后自动流程：4 卡并行推理 → 聚合 op_bwt.json → 守门脚本 watcher.sh 自动启动剩余 14 组扫描（3 模型 × 5 比例，含本组）。
+- 云端关键路径：模型 `/dev/shm/hf/`，输出 `/dev/shm/outputs/`，结果持久化 `/root/results/`。
+- 运行细节与命令见 [RUNBOOK.md](RUNBOOK.md)。

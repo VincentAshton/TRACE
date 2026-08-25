@@ -160,6 +160,7 @@ cython_debug/
 #.idea/
 
 # Experiment data & outputs (large / regenerable, not source code)
-data/
-results/
-outputs/
+# 用前导 / 只匹配仓库根目录，避免误伤 utils/data/ 等源代码目录
+/data/
+/results/
+/outputs/

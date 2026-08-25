@@ -20,6 +20,14 @@ for entry in "${MODELS[@]}"; do
   model="${entry%%|*}"
   path="${entry#*|}"
 
+  # baichuan2 不支持 flash_attention_2（会报 "does not support Flash Attention 2.0"），
+  # 必须用 eager；llama2 / vicuna（llama 系架构）用 flash_attention_2 省显存。
+  if [ "$model" = "baichuan2-7b" ]; then
+    export ATTN_IMPL="eager"
+  else
+    export ATTN_IMPL="flash_attention_2"
+  fi
+
   for ratio in $RATIOS; do
     out_dir="$OUT_ROOT/$model/ratio_$ratio"
     if [ -f "$out_dir/op_bwt.json" ]; then

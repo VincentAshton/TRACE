@@ -12,6 +12,10 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import hashlib
+try:
+    import fcntl  # POSIX file lock (Linux); unavailable on Windows
+except ImportError:  # pragma: no cover
+    fcntl = None
 from . import raw_datasets
 
 
@@ -297,8 +301,8 @@ def create_prompt_dataset(local_rank,
     """
     os.makedirs(output_path, exist_ok=True)
     fname = data_path
-    # 为什么单独要 sft data？
-    fname = f"{fname}_seed{seed}"
+    # 把会影响数据集内容的参数一并纳入缓存 key，避免不同 ratio / 配置互相覆盖
+    fname = f"{fname}_seed{seed}_ratio{sample_ratio}_prefix{add_sys_prefix}_bb{for_backbone}"
     fname = "_".join(fname.split("/"))
     fname = hashlib.sha256(fname.encode()).hexdigest(
     )  # hash the file name to avoid too long file name
@@ -306,23 +310,42 @@ def create_prompt_dataset(local_rank,
     eval_fname = f"{output_path}/evaldata_{fname}.pt"
     test_fname = f"{output_path}/testdata_{fname}.pt"
 
-    cache_found = os.path.isfile(train_fname) and os.path.isfile(eval_fname)
-    # buf_create_cache = torch.ByteTensor([not cache_found]).cuda()
-    # # 将不同进程的张量汇总sum
-    # torch.distributed.all_reduce(buf_create_cache)
+    cache_found = (os.path.isfile(train_fname)
+                   and os.path.isfile(eval_fname)
+                   and os.path.isfile(test_fname))
 
-    # for debug
-    # if local_rank <= 0 and (buf_create_cache.item() != 0 or reload):
-    if local_rank <= 0:
-        train_dataset, eval_dataset, test_dataset = create_dataset(
-            local_rank, data_path, output_path,
-            seed, add_sys_prefix=add_sys_prefix, for_backbone=for_backbone, sample_ratio=sample_ratio)
+    # 只有缓存不存在（或显式 reload）时才生成；否则直接复用，避免反复 tokenize。
+    # 推理阶段 run_infer_parallel.sh 会启动 4 个独立的 deepspeed 进程并发加载同一批缓存，
+    # 因此必须用「跨进程文件锁 + 双重检查」防止并发写坏同一个 .pt 文件（曾导致
+    # torch.load 报 "filename 'storages' not found"）。
+    if local_rank <= 0 and (not cache_found or reload):
+        lock_path = os.path.join(output_path, ".dataset_cache.lock")
+        lock_file = open(lock_path, "w")
+        try:
+            if fcntl is not None:
+                fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                cache_found = (os.path.isfile(train_fname)
+                               and os.path.isfile(eval_fname)
+                               and os.path.isfile(test_fname))
+                if not cache_found or reload:
+                    train_dataset, eval_dataset, test_dataset = create_dataset(
+                        local_rank, data_path, output_path,
+                        seed, add_sys_prefix=add_sys_prefix, for_backbone=for_backbone, sample_ratio=sample_ratio)
 
-        # torch.save的数据格式可以是任意的
-        # 提前准备好，可以加速预处理，torch.load 速度也会比较快
-        torch.save(train_dataset, train_fname)
-        torch.save(eval_dataset, eval_fname)
-        torch.save(test_dataset, test_fname)
+                    # torch.save的数据格式可以是任意的；先写临时文件再原子重命名，
+                    # 确保其他进程读到的永远是完整文件
+                    for path, ds in [(train_fname, train_dataset),
+                                     (eval_fname, eval_dataset),
+                                     (test_fname, test_dataset)]:
+                        tmp_path = f"{path}.tmp"
+                        torch.save(ds, tmp_path)
+                        os.replace(tmp_path, path)
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file, fcntl.LOCK_UN)
+        finally:
+            lock_file.close()
 
     if distributed:
         torch.distributed.barrier()

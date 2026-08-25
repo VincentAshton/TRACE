@@ -125,5 +125,7 @@ rm -rf "$OUT_DIR"/{0,1,2,3,4,5,6,7}
 echo "========== MARK COMPLETE =========="
 # .complete 是整个流程最后生成的文件，是「该组已完成且已持久化」的权威标志
 touch "$OUT_DIR/.complete"
+# 同步完成标记到持久盘，保证 /dev/shm 清空后持久盘仍有完成标记（便于下次恢复识别已完成组）
+cp "$OUT_DIR/.complete" "$PERSIST_DIR/.complete"
 
 echo "DONE -> $OUT_DIR (results persisted to $PERSIST_DIR)"

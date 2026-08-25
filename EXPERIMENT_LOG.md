@@ -73,7 +73,7 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 
 （待全部跑完后填写：每个模型 OP/BWT 首次跌破 10% 基线的最大比例，即最接近 10% 的那个下降比例）
 
-## 9. 运行状态（快照 2026-08-25）
+## 9. 运行状态（快照 2026-08-26）
 
 分阶段执行状态：
 
@@ -82,12 +82,14 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 | 阶段 1 | 代码修复（任务 A–I：严格聚合、缓存并发锁、原子持久化、fail-fast、环境预检等） | ✅ 完成，commit `6ea5afc` |
 | 阶段 2 | 冒烟测试（vicuna 极小数据全链路：训练→ZeRO-3 存取→推理→严格聚合→持久化→.complete） | ✅ 通过，commit `ac88b78` |
 | 阶段 3 | 恢复 llama2 0.10 baseline（36 预测齐全，重新聚合 OP=0.5443/BWT=0.0770，补 manifest+.complete） | ✅ 完成 |
-| 阶段 4 | 正式实验（13 组：llama2 0.08/0.05/0.02/0.01 + vicuna 5 组 + baichuan 5 组） | 🔄 进行中，llama2 0.08 已完成 |
+| 阶段 4 | 正式实验（13 组：llama2 0.08/0.05/0.02/0.01 + vicuna 5 组 + baichuan 5 组） | ⏸️ 暂停，llama2 0.08 已完成，等导师/学长验证后再继续 |
+| 加固 | 缓存/结果校验/持久化/失败恢复四流程加固 | ✅ 完成，commit `fda0aee` |
 
 - **llama2-7b-chat ratio=0.10 为正式本地 baseline**：OP=0.544 / BWT=+0.077（论文 0.555 / 0.026）。
 - **llama2-7b-chat ratio=0.08 已完成**：OP=0.542 / BWT=+0.060，对比基线 OP -0.002（几乎持平）、BWT -0.017（略降）——**8% 尚未出现明显性能下降**。
 - 全程耗时实测：训练 7h02m + 推理 3h31m = **10.5h/组**。
 - 推理偏慢根因已查明（512 token 自回归生成固有开销 + 每 round 重复加载模型，**非 flash-attn 失效**），详见 HANDOFF.md 第 8 节。
+- **当前状态：实验暂停，容器实例即将关闭。** 已完成结果（llama2 0.10 基线 + 0.08）均已持久化到 `/root/results`（持久盘）并同步到本地 `results/`。恢复时按 HANDOFF.md 第 9 节步骤：重新下载模型 → 同步代码 → 跑剩余 12 组。
 - 三个模型已全部下载完成：llama2-7b-chat-hf（26G，safetensors+pytorch 双格式）/ vicuna-7b-v1.5（13G）/ baichuan2-7b-chat（14G）。
 - 云端关键路径：模型 `/dev/shm/hf/`，输出 `/dev/shm/outputs/`，结果持久化 `/root/results/`。
 - 运行细节与命令见 [RUNBOOK.md](RUNBOOK.md)。

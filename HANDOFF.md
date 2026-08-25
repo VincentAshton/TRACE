@@ -83,13 +83,14 @@ watcher.sh（等 ratio_0.10 的 .complete）
 
 **完成判定 = `.complete` 存在**（不是 `op_bwt.json` 存在）。`.complete` 是整个流程最后生成的文件。
 
-## 5. 当前进度（2026-08-25）
+## 5. 当前进度（2026-08-26）
 
 - ✅ **阶段 1 代码修复（任务 A–I）**：完成，commit `6ea5afc`
-- ✅ **阶段 2 冒烟测试**：通过（vicuna 极小数据全链路，冒烟值 OP=0.3523/BWT=0.0504，不代表正式结果）
-- ✅ **阶段 3 恢复 llama2 0.10 baseline**：验证通过 OP=0.5443/BWT=0.0770，补 manifest（`validated_legacy_run`）+ `.complete`
+- ✅ **阶段 2 冒烟测试**：通过（vicuna 极小数据全链路，冒烟值 OP=0.3523/BWT=0.0504）
+- ✅ **阶段 3 恢复 llama2 0.10 baseline**：OP=0.5443/BWT=0.0770，补 manifest + `.complete`
 - ✅ **三个模型已下载完成**：llama2（26G）/ vicuna（13G）/ baichuan（14G）
-- ⏳ **阶段 4 正式实验**：待开始。llama2 0.08 因 checkpoint 随 `/dev/shm` 重启丢失，需整组重训（不混合新旧预测）
+- ✅ **llama2-7b-chat ratio=0.08 完成**：OP=0.5422/BWT=0.0603（对比基线 OP -0.002 持平、BWT -0.017 略降，8% 未现明显下降）
+- ⏳ **阶段 4 剩余 12 组**：llama2 0.05/0.02/0.01 + vicuna 5 组 + baichuan 5 组
 
 ## 6. 已修复的问题（本次全部完成）
 
@@ -129,7 +130,7 @@ watcher.sh（等 ratio_0.10 的 .complete）
 3. **vicuna 正式数据未验证**：已通过极小数据冒烟测试（全链路 OK），但正式 5000 样本未跑过，需第一组正式 canary 实测。
 4. **run_manifest 的 resume 校验是基础版**：记录了配置和 run ID，但尚未实现「推理前自动比对 manifest 与当前配置拒绝不匹配」的完整逻辑（当前靠 .complete 判定跳过，未做逐字段比对）。
 5. **云端非 git 仓库**：代码靠 scp 同步，`git_commit` 在云端记录为 `unknown`（除非云端也 git init）。
-6. **推理偏慢（待实测）**：冒烟测试短任务 6-13s/step、长任务（MeetingBank/Py150）30-56s/step，vs 训练 2.1s/step。疑 flash-attn 推理未完全生效或 vicuna 特性；待阶段 4 llama2 正式推理实测，必要时 profiling 优化（batch 16、max_ans_len 512、temperature 采样）。
+6. **推理偏慢（已查明，非 bug）**：实测 llama2 推理 10-28s/step（短任务 ~10s、长任务 ~25-28s）。经查证 flash-attn 在推理时**已生效**（ATTN_IMPL 正确传递 + 日志有 Flash Attention 加载记录），慢的真正原因是：① 512 token 自回归生成的固有开销（`max_ans_len=512` 官方固定配置，无法压缩）；② `infer_single.py` 每 round 重复加载基础模型 + `torch.load` checkpoint + 逐参数 copy（8 次，约 16-24 分钟冗余）。可选优化：推理复用模型（省 ~20min/组 × 15 组 ≈ 5h），但改动有风险，待判断是否值得。
 
 ## 9. 恢复实验的操作步骤（实例恢复后，按此顺序）
 

@@ -23,6 +23,43 @@ export ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 DATASETS="C-STANCE,FOMC,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten"
 OUT_DIR="$OUT_ROOT/$MODEL_SHORT/ratio_$RATIO"
 mkdir -p "$OUT_DIR"
+
+# 失败状态标记：任何未捕获错误写 .failed（记录时间+模型+比例），便于快速识别失败组
+trap 'echo "[FAILED] $(date -Iseconds) model=$MODEL_SHORT ratio=$RATIO" > "$OUT_DIR/.failed" 2>/dev/null || true' ERR
+
+# ---- 重跑前配置一致性校验：若已有 manifest，比对冻结配置，不匹配则拒绝（防配置漂移混用结果）----
+if [ -f "$OUT_DIR/run_manifest.json" ]; then
+  python - "$OUT_DIR/run_manifest.json" "$MODEL_SHORT" "$RATIO" "$ATTN_IMPL" "$NUM_EPOCHS" "$LR" "$MAX_PROMPT_LEN" "$MAX_ANS_LEN" "$ZERO_STAGE" <<'PY'
+import json, sys
+mf, model, ratio, attn, epochs, lr, mpl, mal, zero = sys.argv[1:10]
+try:
+    d = json.load(open(mf))
+except Exception:
+    print("[WARN] 旧 manifest 不可解析，跳过一致性校验（将重新生成）")
+    sys.exit(0)
+checks = {
+    "model": (d.get("model"), model),
+    "ratio": (d.get("ratio"), ratio),
+    "attention": (d.get("attention"), attn),
+    "num_train_epochs": (d.get("num_train_epochs"), epochs),
+    "max_prompt_len": (d.get("max_prompt_len"), int(mpl)),
+    "max_ans_len": (d.get("max_ans_len"), int(mal)),
+    "zero_stage": (d.get("zero_stage"), int(zero)),
+}
+mismatch = [k for k, (o, n) in checks.items() if o != n]
+try:
+    if abs(d.get("learning_rate") - float(lr)) > 1e-9:
+        mismatch.append("learning_rate")
+except (TypeError, ValueError):
+    mismatch.append("learning_rate")
+if mismatch:
+    print(f"[FATAL] 本次配置与旧 manifest 不一致: {mismatch}")
+    print("[FATAL] 拒绝运行，防止配置漂移导致结果不可比。若确要改配置重跑，请先删除旧 manifest 或换输出目录。")
+    sys.exit(1)
+print("[manifest-check] 配置与旧 manifest 一致，继续运行")
+PY
+fi
+
 # clean any stale checkpoints from a previous (failed) run
 rm -rf "$OUT_DIR"/{0,1,2,3,4,5,6,7}
 port=$(shuf -i25000-30000 -n1)
@@ -78,5 +115,8 @@ deepspeed --include="localhost:$GPUS" --master_port $port training/replay.py \
 
 echo "========== INFER (parallel) + AGGREGATE =========="
 bash "$REPO_DIR/scripts/run_infer_parallel.sh" "$MODEL_SHORT" "$MODEL_PATH" "$RATIO"
+
+# 成功完成：清除可能的旧失败标记（.complete 由 run_infer_parallel.sh 最后生成）
+rm -f "$OUT_DIR/.failed"
 
 echo "DONE -> $OUT_DIR"

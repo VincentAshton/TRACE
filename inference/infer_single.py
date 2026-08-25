@@ -204,7 +204,7 @@ def main():
         return sources_sequences, predicted_sequences, ground_truths
 
     def is_valid_result(fn: str) -> bool:
-        """已有结果文件是否可解析且含有效指标（损坏/截断/不匹配则返回 False）。"""
+        """已有结果文件是否可解析、含有效指标、且内容一致（损坏/截断/空预测则返回 False）。"""
         try:
             with open(fn) as f:
                 data = json.load(f)
@@ -213,7 +213,20 @@ def main():
         if not isinstance(data, dict):
             return False
         ev = data.get("eval")
-        return isinstance(ev, dict) and len(ev) > 0
+        if not (isinstance(ev, dict) and len(ev) > 0):
+            return False
+        # 内容一致性：prompts/results/labels 必须都是非空列表且长度一致，
+        # 否则视为空预测/截断结果，不能当作有效结果跳过。
+        prompts = data.get("prompts")
+        results = data.get("results")
+        labels = data.get("labels")
+        if not (isinstance(prompts, list) and isinstance(results, list) and isinstance(labels, list)):
+            return False
+        if not (prompts and results and labels):
+            return False
+        if not (len(prompts) == len(results) == len(labels)):
+            return False
+        return True
 
     def save_inference_results(evaluation_result: dict, sources_sequences: list, predicted_sequences: list,
                                 ground_truths: list, round: int, i_task: int, task: str):

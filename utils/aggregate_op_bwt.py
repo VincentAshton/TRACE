@@ -158,6 +158,15 @@ def main():
             json.dump({"op": OP, "bwt": BWT, "R": R,
                        "final": final, "bwt_terms": bwt_terms}, f, indent=2)
         os.replace(tmp, args.out)  # atomic write: never leave a half-written op_bwt.json
+        # 回读校验：确认落盘文件可解析且 op/bwt 与本次计算结果一致，防止静默写坏
+        try:
+            with open(args.out) as f:
+                chk = json.load(f)
+            if chk.get("op") != OP or chk.get("bwt") != BWT:
+                raise ValueError(f"回读不一致: {chk.get('op')} / {chk.get('bwt')}")
+        except Exception as e:
+            print(f"[ERROR] op_bwt.json 回读校验失败: {e}")
+            sys.exit(1)
         print(f"saved -> {args.out}")
 
 

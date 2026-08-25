@@ -74,6 +74,13 @@ PERSIST_ROOT="${PERSIST_ROOT:-/root/results}"
 PERSIST_DIR="$PERSIST_ROOT/$MODEL_SHORT/ratio_$RATIO"
 PERSIST_TMP="$PERSIST_DIR.tmp.$$"
 
+# 0) 空间预检：/root/results 需有足够空间（保守要求 >= 1GB，实际结果仅几 MB）
+FREE_KB=$(df -k --output=avail "$PERSIST_ROOT" 2>/dev/null | tail -1)
+if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 1048576 ]; then
+  echo "[ERROR] /root/results 可用空间不足（${FREE_KB}KB < 1GB），持久化中止，保留 checkpoint"
+  exit 1
+fi
+
 # 1) 校验 op_bwt.json 可解析且 op/bwt 非空（严格聚合已保证，这里再兜底）
 python - "$OUT_DIR/op_bwt.json" <<'PY'
 import json, sys
@@ -99,6 +106,17 @@ fi
 rm -rf "$PERSIST_DIR"
 mv "$PERSIST_TMP" "$PERSIST_DIR"
 echo "[persist] 结果已持久化到 $PERSIST_DIR"
+
+# 5) 回读校验：确认持久化目录完整（op_bwt 可解析 + 预测数==36），防止 cp/mv 静默丢文件
+python - "$PERSIST_DIR/op_bwt.json" "$PERSIST_DIR/predictions" <<'PY'
+import json, sys, os, glob
+op, preds = sys.argv[1], sys.argv[2]
+d = json.load(open(op))
+assert d.get("op") is not None and d.get("bwt") is not None, "持久化 op_bwt.json 缺 op/bwt"
+n = len(glob.glob(os.path.join(preds, "results-*.json")))
+assert n == 36, f"持久化预测文件数 {n} != 36"
+print(f"[persist] 回读校验通过: OP={d['op']:.4f} BWT={d['bwt']:.4f}, {n} predictions")
+PY
 
 echo "========== CLEANUP CHECKPOINTS =========="
 # 只有持久化验证通过后才清理 checkpoint

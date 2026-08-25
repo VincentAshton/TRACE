@@ -286,6 +286,32 @@ def create_dataset(local_rank, dataset_name, output_path,
     return train_dataset, eval_dataset, test_dataset
 
 
+def _data_dir_fingerprint(data_path: str) -> str:
+    """计算数据目录的轻量指纹（json 文件的 路径+mtime+size 哈希）。
+
+    数据内容一旦变更（增删改 json），指纹随之变化，缓存 key 失效并自动重建，
+    避免「数据更新但静默复用旧缓存」导致的结果污染。
+    """
+    h = hashlib.sha256()
+    if os.path.isdir(data_path):
+        for root, dirs, files in sorted(os.walk(data_path)):
+            for fn in sorted(files):
+                if fn.endswith(".json"):
+                    p = os.path.join(root, fn)
+                    try:
+                        st = os.stat(p)
+                        h.update(f"{p}:{int(st.st_mtime)}:{st.st_size}".encode())
+                    except OSError:
+                        h.update(f"{p}:missing".encode())
+    elif os.path.isfile(data_path):
+        try:
+            st = os.stat(data_path)
+            h.update(f"{data_path}:{int(st.st_mtime)}:{st.st_size}".encode())
+        except OSError:
+            h.update(f"{data_path}:missing".encode())
+    return h.hexdigest()[:16]
+
+
 # step 1
 def create_prompt_dataset(local_rank,
                           data_path,
@@ -302,8 +328,9 @@ def create_prompt_dataset(local_rank,
     """
     os.makedirs(output_path, exist_ok=True)
     fname = data_path
-    # 把会影响数据集内容的参数一并纳入缓存 key，避免不同 ratio / 配置互相覆盖
-    fname = f"{fname}_seed{seed}_ratio{sample_ratio}_prefix{add_sys_prefix}_bb{for_backbone}"
+    # 把会影响数据集内容的参数一并纳入缓存 key，避免不同 ratio / 配置互相覆盖；
+    # 并纳入数据目录指纹，数据内容变更时自动失效重建（不静默复用旧缓存）。
+    fname = f"{fname}_seed{seed}_ratio{sample_ratio}_prefix{add_sys_prefix}_bb{for_backbone}_data{_data_dir_fingerprint(data_path)}"
     fname = "_".join(fname.split("/"))
     fname = hashlib.sha256(fname.encode()).hexdigest(
     )  # hash the file name to avoid too long file name

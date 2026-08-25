@@ -27,6 +27,30 @@ mkdir -p "$OUT_DIR"
 rm -rf "$OUT_DIR"/{0,1,2,3,4,5,6,7}
 port=$(shuf -i25000-30000 -n1)
 
+# ---- run manifest：记录 run ID + 冻结配置 + 环境版本，供 resume/校验使用 ----
+GIT_COMMIT="$(cd "$REPO_DIR" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+python - "$OUT_DIR/run_manifest.json" "$MODEL_SHORT" "$MODEL_PATH" "$RATIO" \
+    "$GIT_COMMIT" "$GPUS" "$ATTN_IMPL" "$NUM_EPOCHS" "$LR" "$MAX_PROMPT_LEN" "$MAX_ANS_LEN" "$ZERO_STAGE" <<'PY'
+import json, sys, time, os
+(_, out, model, mpath, ratio, commit, gpus, attn, epochs, lr, mpl, mal, zero) = sys.argv
+import torch, transformers, deepspeed
+manifest = {
+    "run_id": f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}",
+    "started_at": time.strftime('%Y-%m-%dT%H:%M:%S'),
+    "git_commit": commit,
+    "model": model, "model_path": mpath, "ratio": ratio,
+    "seed": 1234, "gpus": gpus,
+    "per_device_train_batch_size": 4, "gradient_accumulation_steps": 16,
+    "num_train_epochs": epochs, "learning_rate": float(lr),
+    "max_prompt_len": int(mpl), "max_ans_len": int(mal), "zero_stage": int(zero),
+    "attention": attn,
+    "torch": torch.__version__, "cuda": torch.version.cuda,
+    "transformers": transformers.__version__, "deepspeed": deepspeed.__version__,
+}
+json.dump(manifest, open(out, "w"), indent=2)
+print(f"[manifest] run_id={manifest['run_id']}  commit={commit}")
+PY
+
 echo "========== TRAIN: model=$MODEL_SHORT ratio=$RATIO -> $OUT_DIR =========="
 deepspeed --include="localhost:$GPUS" --master_port $port training/replay.py \
     --data_path "$DATA_PATH" \

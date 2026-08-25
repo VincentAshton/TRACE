@@ -69,12 +69,43 @@ python "$REPO_DIR/utils/aggregate_op_bwt.py" \
     --tasks "$DATASETS" \
     --out "$OUT_DIR/op_bwt.json" | tee "$OUT_DIR/op_bwt.txt"
 
-echo "========== PERSIST RESULTS + CLEANUP =========="
-PERSIST_DIR="/root/results/$MODEL_SHORT/ratio_$RATIO"
-mkdir -p "$PERSIST_DIR"
-cp "$OUT_DIR/op_bwt.json" "$OUT_DIR/op_bwt.txt" "$PERSIST_DIR/" 2>/dev/null || true
-cp -r "$OUT_DIR/predictions" "$PERSIST_DIR/" 2>/dev/null || true
-# free checkpoint space (keep predictions + op_bwt + logs)
+echo "========== PERSIST RESULTS (verified) =========="
+PERSIST_ROOT="${PERSIST_ROOT:-/root/results}"
+PERSIST_DIR="$PERSIST_ROOT/$MODEL_SHORT/ratio_$RATIO"
+PERSIST_TMP="$PERSIST_DIR.tmp.$$"
+
+# 1) 校验 op_bwt.json 可解析且 op/bwt 非空（严格聚合已保证，这里再兜底）
+python - "$OUT_DIR/op_bwt.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d.get("op") is not None and d.get("bwt") is not None, "op_bwt.json 缺 op/bwt"
+print(f"[persist] op_bwt.json 校验通过: OP={d['op']:.4f} BWT={d['bwt']:.4f}")
+PY
+
+# 2) 复制到临时目录（含 manifest），再原子重命名（任一失败即中止，不清 checkpoint）
+rm -rf "$PERSIST_TMP"
+mkdir -p "$PERSIST_TMP"
+cp "$OUT_DIR/op_bwt.json" "$OUT_DIR/op_bwt.txt" "$OUT_DIR/run_manifest.json" "$PERSIST_TMP/"
+cp -r "$OUT_DIR/predictions" "$PERSIST_TMP/"
+
+# 3) 校验预测文件数量 == 36（8 任务完整下三角矩阵）
+NPRED=$(find "$PERSIST_TMP/predictions" -name "results-*.json" 2>/dev/null | wc -l)
+if [ "$NPRED" -ne 36 ]; then
+  echo "[ERROR] 预测文件数 $NPRED != 36，持久化中止，保留 checkpoint"
+  exit 1
+fi
+
+# 4) 原子切换到正式目录
+rm -rf "$PERSIST_DIR"
+mv "$PERSIST_TMP" "$PERSIST_DIR"
+echo "[persist] 结果已持久化到 $PERSIST_DIR"
+
+echo "========== CLEANUP CHECKPOINTS =========="
+# 只有持久化验证通过后才清理 checkpoint
 rm -rf "$OUT_DIR"/{0,1,2,3,4,5,6,7}
+
+echo "========== MARK COMPLETE =========="
+# .complete 是整个流程最后生成的文件，是「该组已完成且已持久化」的权威标志
+touch "$OUT_DIR/.complete"
 
 echo "DONE -> $OUT_DIR (results persisted to $PERSIST_DIR)"

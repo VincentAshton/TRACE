@@ -45,8 +45,9 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 | 项 | 值 |
 |---|---|
 | 学习率 | 1e-5，Adam (β=0.9, 0.95)，weight decay 0 |
-| per_device batch | 4，梯度累积 16（全局 batch = 4×4×16 = 256，对齐论文）|
+| per_device batch | 4，梯度累积 16（名义全局 batch = 4×4×16 = 256，官方代码路径下的 4-GPU 固定配置）|
 | 每任务 epoch | 5,3,7,5,3,5,5,7（对应 8 个任务）|
+| scheduler | constant（代码实际用 constant；脚本传入的 `--lr_scheduler_type cosine` 参数无效）|
 | 精度 / 注意力 | bf16 + flash-attention 2 |
 | ZeRO | stage 3 |
 | 梯度检查点 | 开启（长句任务 FOMC/MeetingBank/Py150 + Lima 回放必须开，否则 4 卡 OOM 爆 78G）|

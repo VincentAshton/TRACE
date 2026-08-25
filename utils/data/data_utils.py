@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import hashlib
+import time
 try:
     import fcntl  # POSIX file lock (Linux); unavailable on Windows
 except ImportError:  # pragma: no cover
@@ -314,39 +315,72 @@ def create_prompt_dataset(local_rank,
                    and os.path.isfile(eval_fname)
                    and os.path.isfile(test_fname))
 
-    # 只有缓存不存在（或显式 reload）时才生成；否则直接复用，避免反复 tokenize。
-    # 推理阶段 run_infer_parallel.sh 会启动 4 个独立的 deepspeed 进程并发加载同一批缓存，
-    # 因此必须用「跨进程文件锁 + 双重检查」防止并发写坏同一个 .pt 文件（曾导致
-    # torch.load 报 "filename 'storages' not found"）。
-    if local_rank <= 0 and (not cache_found or reload):
-        lock_path = os.path.join(output_path, ".dataset_cache.lock")
+    lock_path = os.path.join(output_path, ".dataset_cache.lock")
+
+    def _load_three():
+        return (torch.load(train_fname), torch.load(eval_fname), torch.load(test_fname))
+
+    def _build_fn():
+        return create_dataset(local_rank, data_path, output_path, seed,
+                              add_sys_prefix=add_sys_prefix, for_backbone=for_backbone,
+                              sample_ratio=sample_ratio)
+
+    def _rebuild_cache(force=False):
+        # 跨进程文件锁 + 双重检查 + 隔离损坏文件 + 原子写。
+        # 推理阶段 run_infer_parallel.sh 会启动 4 个独立的 deepspeed 进程并发加载同一批缓存，
+        # 锁保证同一时刻只有一个进程重建，其余进程在锁内看到缓存已有效后直接返回。
         lock_file = open(lock_path, "w")
         try:
             if fcntl is not None:
                 fcntl.flock(lock_file, fcntl.LOCK_EX)
             try:
-                cache_found = (os.path.isfile(train_fname)
-                               and os.path.isfile(eval_fname)
-                               and os.path.isfile(test_fname))
-                if not cache_found or reload:
-                    train_dataset, eval_dataset, test_dataset = create_dataset(
-                        local_rank, data_path, output_path,
-                        seed, add_sys_prefix=add_sys_prefix, for_backbone=for_backbone, sample_ratio=sample_ratio)
-
-                    # torch.save的数据格式可以是任意的；先写临时文件再原子重命名，
-                    # 确保其他进程读到的永远是完整文件
-                    for path, ds in [(train_fname, train_dataset),
-                                     (eval_fname, eval_dataset),
-                                     (test_fname, test_dataset)]:
-                        tmp_path = f"{path}.tmp"
-                        torch.save(ds, tmp_path)
-                        os.replace(tmp_path, path)
+                if not force:
+                    try:
+                        _load_three()
+                        return  # 别的进程已经重建好了
+                    except Exception:
+                        pass
+                # 隔离旧的损坏缓存 + 清理残留 .tmp（防止半成品被当成有效缓存）
+                ts = int(time.time())
+                for path in (train_fname, eval_fname, test_fname):
+                    if os.path.exists(path):
+                        os.rename(path, f"{path}.corrupt.{ts}")
+                    tmp = f"{path}.tmp"
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                # 重建：先写临时文件再原子重命名，确保其他进程读到的永远是完整文件
+                train_dataset, eval_dataset, test_dataset = _build_fn()
+                for path, ds in ((train_fname, train_dataset),
+                                 (eval_fname, eval_dataset),
+                                 (test_fname, test_dataset)):
+                    tmp_path = f"{path}.tmp"
+                    torch.save(ds, tmp_path)
+                    os.replace(tmp_path, path)
             finally:
                 if fcntl is not None:
                     fcntl.flock(lock_file, fcntl.LOCK_UN)
         finally:
             lock_file.close()
 
+    # local_rank 0 负责确保缓存有效：不存在 / 显式 reload / 损坏时在锁内重建
+    result = None
+    if local_rank <= 0:
+        if reload or not cache_found:
+            _rebuild_cache(force=reload)
+        try:
+            result = _load_three()
+        except Exception:
+            # 缓存存在但已损坏（如并发写坏导致的 "filename 'storages' not found"）→ 自愈重建
+            _rebuild_cache(force=False)
+            result = _load_three()
+    else:
+        result = None
+
     if distributed:
         torch.distributed.barrier()
-    return torch.load(train_fname), torch.load(eval_fname), torch.load(test_fname)
+
+    # 非 rank0 在 barrier 后加载（此时缓存已由 rank0 确保有效）
+    if local_rank > 0:
+        result = _load_three()
+
+    return result

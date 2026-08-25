@@ -10,12 +10,21 @@ reconstructs the R matrix (round x task), and computes the paper's metrics (Sect
 
 Verified against paper Appendix Table 7 (Baichuan SeqFT): OP=0.434, BWT=-0.154.
 
+STRICT MODE (default): the full lower-triangular R matrix (36 files for T=8) must be
+present, parseable, contain each task's primary metric, and the normalized metric must
+be finite and in [0,1]. Any failure exits non-zero and does NOT write op_bwt.json.
+This prevents a partially-inferred run from being mistaken for a complete one (which
+would otherwise trigger checkpoint cleanup downstream). Use --no-strict to override.
+
 Usage:
-  python utils/aggregate_op_bwt.py --results_dir <dir> [--tasks a,b,c] [--out op_bwt.json]
+  python utils/aggregate_op_bwt.py --results_dir <dir> [--tasks a,b,c] [--out op_bwt.json] [--no-strict]
 """
 import os
+import sys
 import json
+import math
 import argparse
+from typing import List, Optional
 
 # primary metric per task (paper Table 4 "Metric" column)
 PRIMARY_METRIC = {
@@ -53,34 +62,48 @@ def extract_primary(eval_dict, task):
     return val
 
 
-def load_results(results_dir, tasks):
+def load_results(results_dir: str, tasks: List[str]):
+    """Load the full lower-triangular R matrix, recording every missing/parseable/
+    out-of-range entry. Returns (R, problems) where problems is a list of error strings."""
     T = len(tasks)
-    R = [[None] * T for _ in range(T)]
-    missing = []
+    R: List[List[Optional[float]]] = [[None] * T for _ in range(T)]
+    problems: List[str] = []
     for round_i in range(T):
         for task_i in range(round_i + 1):
             task = tasks[task_i]
             fn = os.path.join(results_dir, f"results-{round_i}-{task_i}-{task}.json")
             if not os.path.exists(fn):
-                missing.append(fn)
+                problems.append(f"missing file: {fn}")
                 continue
-            with open(fn) as f:
-                data = json.load(f)
-            R[round_i][task_i] = extract_primary(data.get("eval", {}), task)
-    if missing:
-        print(f"[WARN] {len(missing)} result files missing, e.g. {missing[0]}")
-    return R
+            try:
+                with open(fn) as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                problems.append(f"unparseable: {fn} ({e})")
+                continue
+            val = extract_primary(data.get("eval", {}), task)
+            if val is None:
+                problems.append(f"missing metric '{PRIMARY_METRIC[task]}': {fn}")
+                continue
+            if not isinstance(val, (int, float)) or not math.isfinite(val) or not (0.0 <= val <= 1.0):
+                problems.append(f"metric out of range ({val}): {fn}")
+                continue
+            R[round_i][task_i] = float(val)
+    return R, problems
 
 
-def compute_op_bwt(R):
+def compute_op_bwt(R: List[List[Optional[float]]]):
+    """Compute OP/BWT. In strict mode the final row and diagonal are complete, so the
+    results are always finite floats; in --no-strict mode None entries are skipped and
+    OP/BWT may be None if there is nothing to average over."""
     T = len(R)
-    final = [R[T - 1][i] for i in range(T)]
+    final: List[Optional[float]] = [R[T - 1][i] for i in range(T)]
     valid_final = [v for v in final if v is not None]
     OP = sum(valid_final) / len(valid_final) if valid_final else None
-    bwt_terms = []
+    bwt_terms: List[float] = []
     for i in range(T - 1):
         if R[T - 1][i] is not None and R[i][i] is not None:
-            bwt_terms.append(R[T - 1][i] - R[i][i])
+            bwt_terms.append(R[T - 1][i] - R[i][i])  # type: ignore[operator]
     BWT = sum(bwt_terms) / len(bwt_terms) if bwt_terms else None
     return OP, BWT, final, bwt_terms
 
@@ -90,9 +113,31 @@ def main():
     ap.add_argument("--results_dir", required=True)
     ap.add_argument("--tasks", default=",".join(DEFAULT_TASKS))
     ap.add_argument("--out", default=None)
+    ap.add_argument("--no-strict", action="store_true",
+                    help="disable strict completeness validation (NOT recommended)")
     args = ap.parse_args()
     tasks = [t for t in args.tasks.split(",") if t]
-    R = load_results(args.results_dir, tasks)
+    T = len(tasks)
+
+    R, problems = load_results(args.results_dir, tasks)
+
+    if problems:
+        print(f"[ERROR] strict validation failed: {len(problems)} problem(s):")
+        for p in problems:
+            print(f"  - {p}")
+        if not args.no_strict:
+            print("[ERROR] refusing to write op_bwt.json (incomplete/corrupt results)")
+            sys.exit(1)
+        print("[WARN] --no-strict set: proceeding with incomplete matrix (results may be wrong)")
+
+    # BWT / OP require the final row and the main diagonal to be fully present
+    final_missing = [i for i in range(T) if R[T - 1][i] is None]
+    diag_missing = [i for i in range(T - 1) if R[i][i] is None]
+    if (final_missing or diag_missing) and not args.no_strict:
+        print(f"[ERROR] final row missing tasks {final_missing}; diagonal missing rounds {diag_missing}")
+        print("[ERROR] refusing to write op_bwt.json")
+        sys.exit(1)
+
     OP, BWT, final, bwt_terms = compute_op_bwt(R)
 
     print("=" * 64)
@@ -101,15 +146,18 @@ def main():
         pretty = ["  --- " if v is None else f"{v:6.3f}" for v in row]
         print(f"  round {i}: [{''.join(pretty)} ]")
     print("-" * 64)
-    print(f"final-round per-task: {[round(v,4) if v is not None else None for v in final]}")
-    print(f"BWT terms            : {[round(v,4) for v in bwt_terms]}")
+    print(f"final-round per-task (8 values used for OP): {[round(v, 4) if v is not None else None for v in final]}")
+    print(f"BWT terms (7 values used for BWT)          : {[round(v, 4) for v in bwt_terms]}")
     print("-" * 64)
-    print(f"OP  = {OP:.4f}" if OP is not None else "OP = None")
-    print(f"BWT = {BWT:.4f}" if BWT is not None else "BWT = None")
+    print(f"OP  = {OP:.4f}" if OP is not None else "OP  = None (incomplete)")
+    print(f"BWT = {BWT:.4f}" if BWT is not None else "BWT = None (incomplete)")
 
     if args.out:
-        with open(args.out, "w") as f:
-            json.dump({"op": OP, "bwt": BWT, "R": R}, f, indent=2)
+        tmp = f"{args.out}.tmp"
+        with open(tmp, "w") as f:
+            json.dump({"op": OP, "bwt": BWT, "R": R,
+                       "final": final, "bwt_terms": bwt_terms}, f, indent=2)
+        os.replace(tmp, args.out)  # atomic write: never leave a half-written op_bwt.json
         print(f"saved -> {args.out}")
 
 

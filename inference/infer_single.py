@@ -203,15 +203,33 @@ def main():
             predicted_sequences += sequences
         return sources_sequences, predicted_sequences, ground_truths
 
+    def is_valid_result(fn: str) -> bool:
+        """已有结果文件是否可解析且含有效指标（损坏/截断/不匹配则返回 False）。"""
+        try:
+            with open(fn) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return False
+        if not isinstance(data, dict):
+            return False
+        ev = data.get("eval")
+        return isinstance(ev, dict) and len(ev) > 0
+
     def save_inference_results(evaluation_result: dict, sources_sequences: list, predicted_sequences: list,
                                 ground_truths: list, round: int, i_task: int, task: str):
-        # save as a json file
+        # save as a json file (atomic: tmp + fsync + os.replace，避免进程中断留下半成品)
         df = {"eval": evaluation_result, 'prompts': sources_sequences, 'results': predicted_sequences,
                 'labels': ground_truths}
         if not os.path.exists(args.inference_output_path):
             os.makedirs(args.inference_output_path)
-        with open(args.inference_output_path + "/results-" + str(round) + "-" + str(i_task) + "-" + task + ".json", "w+", encoding='utf-8') as file:
+        out_fn = os.path.join(args.inference_output_path,
+                              f"results-{round}-{i_task}-{task}.json")
+        tmp_fn = f"{out_fn}.tmp.{os.getpid()}"
+        with open(tmp_fn, "w", encoding='utf-8') as file:
             json.dump(df, file, ensure_ascii=False)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(tmp_fn, out_fn)
 
 
     tokenizer = load_hf_tokenizer(args.model_name_or_path, fast_tokenizer=True)
@@ -301,8 +319,13 @@ def main():
             out_fn = os.path.join(args.inference_output_path,
                                   f"results-{round}-{inference_task_id}-{inference_task}.json")
             if os.path.exists(out_fn):
-                print(f"[skip] {out_fn} already exists")
-                continue
+                if is_valid_result(out_fn):
+                    print(f"[skip] {out_fn} already exists and is valid")
+                    continue
+                # 损坏/截断/不匹配：隔离后重新生成（不因路径存在就无条件跳过）
+                stale_fn = f"{out_fn}.stale"
+                os.replace(out_fn, stale_fn)
+                print(f"[quarantine] {out_fn} invalid -> {stale_fn}, regenerating")
             dataset_path = os.path.join(args.data_path, inference_task)
             # Prepare the data
             _, _, infer_dataset = create_prompt_dataset(

@@ -2,7 +2,7 @@
 # Watcher: wait for the first run (llama2-7b ratio 0.10) to finish, then launch the full sweep.
 set -uo pipefail
 
-WAIT_FOR="/dev/shm/outputs/llama2-7b-chat/ratio_0.10/op_bwt.json"
+WAIT_FOR="/dev/shm/outputs/llama2-7b-chat/ratio_0.10/.complete"
 MAX_WAIT=$((10*3600))   # 10h safety timeout (train ~6h w/ grad ckpt + parallel infer ~2h)
 elapsed=0
 echo "[watcher] waiting for $WAIT_FOR (max 10h) ..."
@@ -14,10 +14,9 @@ while [ ! -f "$WAIT_FOR" ]; do
     exit 1
   fi
 done
-echo "[watcher] first run done -> cleaning its checkpoints + launching full sweep"
+echo "[watcher] first run complete -> launching full sweep"
 
-# first run used the older script (no self-cleanup); delete its checkpoints
-rm -rf /dev/shm/outputs/llama2-7b-chat/ratio_0.10/{0,1,2,3,4,5,6,7}
+# 注：checkpoint 已由 run_infer_parallel.sh 在持久化验证通过后自行清理，这里不再手动删除
 
 cd /root/TRACE
 export PATH=/root/miniconda3/bin:$PATH

@@ -28,26 +28,28 @@ for entry in "${MODELS[@]}"; do
     export ATTN_IMPL="flash_attention_2"
   fi
 
+  # 模型路径存在性检查（防止模型被误删后烧卡空跑）
+  if [ ! -d "$path" ]; then
+    echo "[FATAL] 模型路径不存在: $path（可能需要重新下载），中止"
+    exit 1
+  fi
+
   for ratio in $RATIOS; do
     out_dir="$OUT_ROOT/$model/ratio_$ratio"
-    if [ -f "$out_dir/op_bwt.json" ]; then
-      echo "[skip] $model ratio=$ratio (done)"
+    if [ -f "$out_dir/.complete" ]; then
+      echo "[skip] $model ratio=$ratio (complete)"
       continue
     fi
     echo ""
     echo "############################################################"
     echo "# MODEL=$model  RATIO=$ratio"
     echo "############################################################"
-    bash "$REPO_DIR/scripts/run_replay_fast.sh" "$model" "$path" "$ratio" \
-      || echo "[FAILED] $model ratio=$ratio (continuing)"
+    bash "$REPO_DIR/scripts/run_replay_fast.sh" "$model" "$path" "$ratio" || {
+      echo "[FATAL] $model ratio=$ratio 失败，fail-fast 中止（不继续消耗 GPU）"
+      exit 1
+    }
   done
-
-  # free /dev/shm model files once a model's runs are done
-  if [ "$model" = "vicuna-7b" ]; then
-    rm -rf /dev/shm/hf/vicuna-7b-v1.5 && echo "[cleanup] deleted vicuna-7b model"
-  elif [ "$model" = "baichuan2-7b" ]; then
-    rm -rf /dev/shm/hf/baichuan2-7b-chat && echo "[cleanup] deleted baichuan model"
-  fi
+  # 不再自动删除模型目录：模型在该模型所有 ratio 完成前必须保留（避免失败重试时重新下载）
 done
 
 echo ""

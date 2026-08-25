@@ -27,11 +27,11 @@
 # 1) 先装 torch（推荐 Python3.10 + torch2.3.1 + CUDA12.1；按镜像 CUDA 版本选 index）
 pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
 
-# 2) 装其余依赖
-git clone https://github.com/BeyonderXX/TRACE.git && cd TRACE
+# 2) 装其余依赖（本实验用 fork，含全部实验修复）
+git clone https://github.com/VincentAshton/TRACE.git && cd TRACE
 pip install -r requirements.txt
 
-# 3) 上传已处理好的数据（本仓库已含数据 + 代码改动）
+# 3) 上传已处理好的数据（数据不在 git 仓库中，需单独上传到云端）
 #    数据目录：data/extracted/TRACE-Benchmark/LLM-CL-Benchmark_5000
 
 # 4) LLaMA-2 需要 HF 授权（gated），先登录

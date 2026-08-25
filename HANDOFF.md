@@ -1,125 +1,168 @@
 # TRACE 实验交接文档（HANDOFF）
 
-> 本文件供「其他 AI agent / 协作者」快速接管本实验。它是一份自包含的交接说明：
-> 读完本文件即可理解实验全貌、当前进度、已知 bug、代码改动，并判断是否还有隐藏问题。
-> 权威运行手册见 `RUNBOOK.md`，实验记录见 `EXPERIMENT_LOG.md`。
+> 目标读者：接手代码修复、实验恢复和结果验收的 AI agent / 工程协作者。
+> 仓库：<https://github.com/VincentAshton/TRACE>
+> 本文是当前修复完成后的最终交接口径；权威运行手册见 `RUNBOOK.md`，实验记录见 `EXPERIMENT_LOG.md`。
 
 ---
 
 ## 1. 一句话概述
 
 在 **TRACE 持续学习基准**（复旦 2023，arXiv:2310.06762）上复现 **Replay（回放）** 方法，
-并研究一个问题：**当回放比例 `past_task_ratio` 从 10% 逐步下调时，模型性能何时开始明显退化（「下降阈值」）**。
+研究：**当回放比例 `past_task_ratio` 从 10% 下降到 8%/5%/2%/1% 时，三个 7B 模型的 OP/BWT
+在什么比例开始明显低于本地 10% baseline（「下降阈值」）。**
 
 ## 2. 实验设计
 
-- **方法**：Replay（训练入口 `training/replay.py`，独立于 `training/main.py`）
-- **模型**：3 个 7B —— llama2-7b-chat、vicuna-7b-v1.5、baichuan2-7b-chat（13B 已砍掉）
-- **回放比例**：0.10（基线）、0.08、0.05、0.02、0.01
+- **方法**：Replay（训练入口 `training/replay.py`）
+- **模型**：llama2-7b-chat、vicuna-7b-v1.5、baichuan2-7b-chat（13B 已砍掉）
+- **比例**：0.10（基线）、0.08、0.05、0.02、0.01
 - **组合**：3 模型 × 5 比例 = **15 组**
-- **指标**（论文 Section 3，8 个任务 T=8）：
-  - `OP` = 最后一轮对所有任务的平均得分（整体性能）
-  - `BWT` = 平均向后迁移（负值 = 学新任务忘旧任务）
-- **基线策略**：用「自己环境跑的 10%」做基线（不直接比论文绝对值，避免环境偏移）
+- **指标**（论文 Section 3，T=8 任务）：
+  - `OP` = 最后一轮对所有任务平均得分
+  - `BWT` = 平均向后迁移（负值 = 遗忘）
+- **基线策略**：用「自己环境跑的 10%」做基线（option B）。论文数值只作参考，**绝不回退为基线**。
+
+### 2.1 与官方代码行为的关系（重要）
+
+本实验**遵循 TRACE 官方公开 Replay 代码的实际行为**，不是按论文文字重新设计：
+
+- replay 阶段保留 `RandomSampler`（**不得改为 DistributedSampler**，这是有意保留的兼容行为）；
+- 每个当前任务训练结束后，额外 replay 1 个 epoch（历史任务 `past_task_ratio` 子集 + 完整 LIMA）；
+- `past_task_ratio` 按原代码取数据前缀，不重新随机抽样；
+- 保留官方任务顺序和训练流程。
+
+### 2.2 冻结的并行配置（不可随意改）
+
+| 项 | 固定值 |
+|---|---|
+| GPU | 4 × A100-80GB |
+| per_device_train_batch_size | 4 |
+| gradient_accumulation_steps | 16 |
+| seed | 1234 |
+| learning rate | 1e-5 |
+| weight decay | 0 |
+| 每任务 epoch | 5,3,7,5,3,5,5,7 |
+| scheduler | constant（**代码实际用 constant，脚本的 `--lr_scheduler_type cosine` 参数无效**） |
+| ZeRO | stage 3 |
+| precision | bf16 |
+| Llama/Vicuna attention | FlashAttention 2 |
+| Baichuan attention | eager |
+
+> ⚠️ 改变 GPU 数 / batch / 梯度累积 / 任务顺序 / epoch / seed / 数据版本 / 模型版本，
+> 必须重跑对应模型的 10% baseline，且不得与旧配置结果混合。
 
 ## 3. 运行环境
 
-- **云端硬件**：4× A100-80GB，**租用自 ebcloud**（按小时计费）
-- **实例连接**：`ssh -p 32433 root@ssh-cn-huabei1.ebcloud.com`（密码认证）
-- **系统内存**：1TB（1007GB）；**`/dev/shm` 是 tmpfs 内存盘，被人为限成 200GB**（这是磁盘满 bug 的根源）
+- **云端**：4× A100-80GB（ebcloud 租用，按小时计费），`ssh -p 32433 root@ssh-cn-huabei1.ebcloud.com`（密码认证）
+- **内存**：1TB；**`/dev/shm` 是 tmpfs 内存盘，人为限成 200GB**（磁盘满 bug 的根源）
 - **软件**：torch 2.3.0+cu121、transformers 4.44.2、deepspeed 0.14.4、flash-attn 2.5.8、Python 3.10（`/root/miniconda3`）
 - **关键路径**：
-  - 代码 `/root/TRACE`（注意：**云端不是 git 仓库**，靠 scp 同步）
-  - 模型 `/dev/shm/hf/`（llama2 51G、vicuna 13G、baichuan 14G）
-  - 输出 `/dev/shm/outputs/`（内存盘）
-  - 结果持久化 `/root/results/`（只有 28G 的 /root 盘）
-  - 数据集 `/root/TRACE/data/extracted/TRACE-Benchmark/LLM-CL-Benchmark_5000`（8 任务 + Lima，原始 .json）
-  - 数据缓存 `/tmp/data_files/*.pt`（tokenize 后的缓存）
+  - 代码 `/root/TRACE`（**云端不是 git 仓库，靠 scp 同步**）
+  - 模型 `/dev/shm/hf/`（llama2 51G / vicuna 13G / baichuan 14G）
+  - 输出 `/dev/shm/outputs/`（内存盘）；持久化 `/root/results/`（28G 小盘）
+  - 数据 `/root/TRACE/data/extracted/TRACE-Benchmark/LLM-CL-Benchmark_5000`（8 任务 + Lima，原始 .json）
+  - 数据缓存 `/tmp/data_files/*.pt`（tokenize 后缓存）
+- **Git 仓库（本地 fork）不包含数据与结果**（`.gitignore` 忽略 `/data/ /results/ /outputs/`）。
 
 ## 4. 执行流程（脚本链路）
 
 ```
-watcher.sh
-  └─ 等 ratio_0.10 的 op_bwt.json 出现 → 清理 0.10 的 checkpoint → 启动 run_sweep.sh
-       └─ run_sweep.sh（resume-safe：跳过已有 op_bwt.json 的组）
-            └─ 每个 (model, ratio) 调 run_replay_fast.sh
-                 ├─ 训练：deepspeed training/replay.py（grad ckpt + bf16 + flash-attn-2 + ZeRO-3）
-                 ├─ 推理：run_infer_parallel.sh（4 卡并行，每个卡负责部分 round）
-                 └─ 聚合：aggregate_op_bwt.py → op_bwt.json → 持久化到 /root/results/ → 清理 checkpoint
+watcher.sh（等 ratio_0.10 的 .complete）
+  └─ run_sweep.sh（fail-fast；skip 依据 .complete；每模型先检查模型路径存在）
+       └─ run_replay_fast.sh（每组）
+            ├─ 生成 run_manifest.json（run ID + 冻结配置 + 环境版本）
+            ├─ 训练 deepspeed training/replay.py
+            └─ run_infer_parallel.sh
+                 ├─ 4 卡并行推理（逐 PID 等待，任一失败保留 checkpoint 退出）
+                 ├─ aggregate_op_bwt.py（严格模式：36 项缺失/损坏即非零退出）
+                 ├─ 持久化到 /root/results（先校验 op_bwt + 预测数==36，再原子 rename）
+                 ├─ 持久化验证通过后才清理 checkpoint
+                 └─ 最后 touch .complete（完成的权威标志）
 ```
 
-结果落盘：`outputs/<model>/ratio_<ratio>/{train.log, infer_*.log, op_bwt.json, op_bwt.txt, predictions/}`
+**完成判定 = `.complete` 存在**（不是 `op_bwt.json` 存在）。`.complete` 是整个流程最后生成的文件。
 
-## 5. 当前进度（2026-08-25 截至）
+## 5. 当前进度（2026-08-25）
 
-- ✅ **llama2-7b-chat ratio=0.10**：完整完成。**OP=0.544 / BWT=+0.077**（论文 0.555/0.026，差 ~2% 属 4 卡 vs 8 卡环境偏移）
-- ⚠️ **llama2-7b-chat ratio=0.08**：训练 8 轮**全部完成**；推理 round 0-6 完成，**round 7 缺 6 个任务**（MeetingBank 起），没聚合出 op_bwt.json
-- ❌ 其余 13 组全部失败（见下）
-- **当前实例已无法连接**（Connection refused），需先恢复实例再继续
+- ✅ **llama2-7b-chat ratio=0.10**：OP=0.544 / BWT=+0.077（本地 baseline）
+- ⚠️ **llama2 ratio=0.08**：训练 8 轮完成；推理 round 0–6 完成、round 7 缺 6 任务；无 op_bwt.json
+- ❌ 其余 13 组：因磁盘满 + baichuan flash-attn 失败
+- **云端实例当前无法连接**（Connection refused），恢复后按第 9 节重启
 
-## 6. 已定位并修复的 3 个 bug
+## 6. 已修复的问题（本次全部完成）
 
-### Bug 1：数据缓存并发写坏（导致 ratio_0.08 推理失败的直接原因）
-- **报错**：`KeyError: "filename 'storages' not found"`（torch.load 时）
-- **根因**：`utils/data/data_utils.py` 的 `create_prompt_dataset` 里，`cache_found` 变量算出来但**根本没被使用**，
-  每个进程的 local_rank 0 都无条件重算 + `torch.save` 覆盖缓存。推理时 `run_infer_parallel.sh` 启动 4 个**独立**的
-  deepspeed 进程并发写同一个 `.pt` 缓存文件 → 文件损坏。
-- **修复**：缓存命中即复用 + 跨进程文件锁（`fcntl.flock`）+ 先写 `.tmp` 再 `os.replace` 原子重命名。
+| 编号 | 问题 | 修复 |
+|---|---|---|
+| P0-1 | 缺结果仍生成 op_bwt.json | `aggregate_op_bwt.py` 严格模式：36 项缺失/损坏/越界即非零退出且不写文件（任务 A） |
+| P0-2 | 失败重跑混用旧预测和新 checkpoint | `run_replay_fast.sh` 生成 run_manifest.json（run ID + 配置）；`infer_single.py` skip 前校验内容，损坏隔离（任务 B/C） |
+| P0-3 | 持久化失败被忽略仍删 checkpoint | `run_infer_parallel.sh` 去掉 `\|\| true`，校验后原子持久化，验证通过才清 checkpoint（任务 D） |
+| P0-4 | 旧损坏缓存不能自愈 | `data_utils.py` 文件锁 + 原子写 + load 失败自动隔离重建（任务 F） |
+| P0-5 | sweep 失败继续 + 删模型 | `run_sweep.sh` fail-fast + 不自动删模型 + 模型路径检查（任务 E） |
+| P0-6 | 输出非原子写，存在即视为有效 | 预测 JSON + op_bwt.json 全部改为 tmp+fsync+os.replace 原子写（任务 A/C） |
+| P1-1 | 完成状态只依赖易失目录单一文件 | `.complete` + manifest 判定；持久化到 `/root/results`（任务 B/D/E） |
+| P1-2 | 环境检查不阻断 | `check_env.py` 全面检查 + 失败非零退出（任务 G） |
+| P1-3 | summary 回退论文 baseline | `summary.py` 缺本地 10% 时不判定阈值，论文仅展示（任务 H） |
+| P1-4 | 文档误导 | 本文件 + RUNBOOK 已修正（任务 I） |
+| 额外 | baichuan flash-attn 不支持 | `run_sweep.sh` 对 baichuan 用 eager（任务 E 的一部分） |
 
-### Bug 2：缓存 key 未包含 sample_ratio（隐藏 bug）
-- **根因**：缓存文件名 hash 只含 `data_path + seed`，不含 `sample_ratio`。不同回放比例的 Lima 缓存会互相覆盖。
-  之前因为 Bug 1 每次重写所以没暴露；修 Bug 1 后必须同时修这个，否则会引入「ratio_0.05 读到 ratio_0.08 的采样数据」。
-- **修复**：hash 纳入 `sample_ratio`、`add_sys_prefix`、`for_backbone`。
-
-### Bug 3：baichuan 不支持 flash_attention_2
-- **报错**：`ValueError: BaichuanForCausalLM does not support Flash Attention 2.0 yet`
-- **根因**：`run_sweep.sh` 全局 `export ATTN_IMPL=flash_attention_2`，baichuan 的自定义 modeling 代码不支持。
-- **修复**：`run_sweep.sh` 里对 baichuan2-7b 用 `ATTN_IMPL=eager`，llama2/vicuna 保持 flash_attention_2。
-  （`run_replay_fast.sh` 用 `${ATTN_IMPL:-flash_attention_2}` 读取，会正确继承 eager；推理脚本不设 ATTN_IMPL，继承环境变量。）
-
-## 7. 代码改动清单（本次 commit f0b51f8）
+## 7. 代码改动清单（本次修复）
 
 | 文件 | 改动 |
 |---|---|
-| `utils/data/data_utils.py` | 缓存并发修复（锁+原子写）+ hash 纳入 sample_ratio |
-| `scripts/run_sweep.sh` | baichuan 用 eager 注意力 |
-| `.gitignore` | `data/` 等裸规则改为 `/data/`（原规则误伤了 `utils/data/` 源代码目录） |
+| `utils/aggregate_op_bwt.py` | 严格校验 + 原子写（任务 A） |
+| `utils/data/data_utils.py` | 缓存并发锁 + 原子写 + 损坏自愈 + hash 纳入 sample_ratio（任务 F + 之前的并发修复） |
+| `inference/infer_single.py` | 预测原子写 + skip 前内容校验 + 损坏隔离（任务 C） |
+| `scripts/run_replay_fast.sh` | 生成 run_manifest.json（任务 B） |
+| `scripts/run_infer_parallel.sh` | 安全持久化 + .complete（任务 D） |
+| `scripts/run_sweep.sh` | fail-fast + .complete skip + 不删模型 + baichuan eager + 模型路径检查（任务 E） |
+| `scripts/watcher.sh` | 等待 .complete，去掉手动清 checkpoint（任务 E） |
+| `scripts/summary.py` | 缺本地 baseline 不判定 + EPS 显式（任务 H） |
+| `scripts/check_env.py` | 全面环境检查 + 失败非零退出（任务 G） |
+| `.gitignore` | `/data/ /results/ /outputs/` 只匹配根目录 |
 
-## 8. 尚未解决 / 潜在风险（供其他 agent 判断）
+## 8. 尚未解决 / 潜在风险
 
-1. **磁盘满**：`/dev/shm` 只有 200GB。8 个 checkpoint(≈107GB) + 3 模型(≈78GB) ≈ 185GB，贴着上限。
-   **根治方案**：`mount -o remount,size=400G /dev/shm`（机器有 1TB 内存，完全够），这是运行时操作，不是代码。
-2. **baichuan 换 eager 后显存是否够**：未验证。7B 全参数 + eager + 长序列 1024 在 4×A100-80GB 上大概率可行，但没实测过。
-3. **vicuna 从没成功训练过一轮**：第一次跑就因磁盘满的 NCCL 报错挂了。需重新下载模型（被 sweep 清理逻辑删了）并验证能正常训练。
-4. **数据缓存 `.tmp` 残留**：进程崩溃可能留下 `.tmp` 文件（不影响正确性，但占空间，可定期清理）。
-5. **`summary.py` 的 paper 基线引用**：vicuna/baichuan 显示 "paper 10% (own 10% missing)"——目前只有 llama2 有自跑基线，其他模型暂无自跑 10% 结果，对比时要注意口径。
+1. **磁盘满**：`/dev/shm` 仅 200GB。**根治**：`mount -o remount,size=400G /dev/shm`（1TB 内存足够），属运行时操作非代码。
+2. **baichuan 换 eager 后显存未验证**：7B 全参 + eager + 长序列 1024 在 4×A100-80GB 大概率可行，未实测。
+3. **vicuna 从未成功训练过**：第一次就因磁盘满 NCCL 挂了，重下后需先验证。
+4. **run_manifest 的 resume 校验是基础版**：记录了配置和 run ID，但尚未实现「推理前自动比对 manifest 与当前配置拒绝不匹配」的完整逻辑（当前靠 .complete 判定跳过，未做逐字段比对）。
+5. **云端非 git 仓库**：代码靠 scp 同步，`git_commit` 在云端记录为 `unknown`（除非云端也 git init）。
 
-## 9. 恢复实验的操作步骤（实例恢复后执行）
+## 9. 恢复实验的操作步骤（实例恢复后，按此顺序）
 
 ```bash
-# 1. 同步本次代码修复到云端（云端非 git 仓库，用 scp）
-scp -P 32433 utils/data/data_utils.py root@<host>:/root/TRACE/utils/data/data_utils.py
-scp -P 32433 scripts/run_sweep.sh root@<host>:/root/TRACE/scripts/run_sweep.sh
+# 1. scp 同步本次所有修改到云端
+scp -P 32433 utils/aggregate_op_bwt.py utils/data/data_utils.py \
+    inference/infer_single.py root@<host>:/root/TRACE/...
+scp -P 32433 scripts/{run_sweep,run_replay_fast,run_infer_parallel,watcher,summary,check_env}.sh \
+    root@<host>:/root/TRACE/scripts/
 
 # 2. 扩大内存盘（根治磁盘满）
 ssh root@<host> 'mount -o remount,size=400G /dev/shm && df -h /dev/shm'
 
-# 3. 释放残留 checkpoint（ratio_0.05 的 2 个 + 失败组空日志；保留 0.10 和 0.08）
-#    （需用户确认后执行 rm -rf，属于不可逆操作）
+# 3. 备份现有产物 → 清理旧损坏缓存
+#    （先备份 /tmp/data_files，再删历史 .pt/.tmp/.corrupt 缓存，让新代码重建）
 
-# 4. 补跑 ratio_0.08 推理（skip-safe，只补 round 7 缺失的 6 个任务，不重训）
-#    bash scripts/run_infer_parallel.sh llama2-7b-chat /dev/shm/hf/Llama-2-7b-chat-hf 0.08
+# 4. 验证 llama2 0.10 baseline：36 个预测齐全、重新聚合仍得 OP=0.544/BWT=0.077，
+#    补录 manifest 并标注 validated_legacy_run，创建 .complete
 
-# 5. 重新下载 vicuna + baichuan 模型（约 27GB，被 sweep 清理逻辑删了）
+# 5. 判断 llama2 0.08 的 round 7 checkpoint 是否可加载：
+#    - 可加载 → 清理坏缓存后只补跑 round 7 缺失任务，严格聚合并持久化
+#    - 不可加载 → 归档旧产物，新 run ID 整组重训 0.08
 
-# 6. 重启 sweep（自动跳过 0.10/0.08，跑剩余 13 组）
-#    bash scripts/run_sweep.sh
+# 6. 重新下载 vicuna + baichuan 模型（~27GB）
+
+# 7. 低成本冒烟测试（4-GPU 启动 + ZeRO-3 保存/加载 + 单任务推理 + 严格聚合 + 持久化 + .complete）
+
+# 8. 每个模型先跑 10% canary，再跑低比例；每组完成后立即校验 + 持久化
 ```
 
 ## 10. 关键约束（务必遵守）
 
-- 长句任务（FOMC/MeetingBank/Py150）+ Lima 回放必须开 `--gradient_checkpointing`，否则 4 卡 OOM 爆 78G
-- 启动 run_replay_fast.sh 必须 `export OUT_ROOT=/dev/shm/outputs`（否则写 /root 的 28G 盘会爆）
-- LLaMA-2 需 HF 授权 token（gated），Vicuna/Baichuan 公开
-- 云端 `PATH=/root/miniconda3/bin`；远程 pkill/grep 匹配进程名须用 `[x]` 括号防杀 SSH 自身
-- 云端是密码认证，密码存本地 `/tmp/askpass.sh`（WSL 重启会丢失，需重设）
+- 长句任务（FOMC/MeetingBank/Py150）+ Lima 回放必须开 `--gradient_checkpointing`（否则 4 卡 OOM）
+- 启动 run_replay_fast.sh 必须 `export OUT_ROOT=/dev/shm/outputs`（否则写 /root 28G 盘会爆）
+- LLaMA-2 需 HF 授权 token；Vicuna/Baichuan 公开
+- 云端 `PATH=/root/miniconda3/bin`；远程 pkill/grep 匹配进程名用 `[x]` 括号防杀 SSH 自身
+- **禁止**：改 RandomSampler、改任务顺序、正式组间改 batch/accumulation、用论文数值替代缺失 baseline、按 op_bwt.json 存在判定完成、持久化校验前清 checkpoint、失败后自动删模型、混用新旧训练预测
+- 完成判定只看 `.complete`；失败即 fail-fast，不继续烧卡

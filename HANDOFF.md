@@ -85,10 +85,11 @@ watcher.sh（等 ratio_0.10 的 .complete）
 
 ## 5. 当前进度（2026-08-25）
 
-- ✅ **llama2-7b-chat ratio=0.10**：OP=0.544 / BWT=+0.077（本地 baseline）
-- ⚠️ **llama2 ratio=0.08**：训练 8 轮完成；推理 round 0–6 完成、round 7 缺 6 任务；无 op_bwt.json
-- ❌ 其余 13 组：因磁盘满 + baichuan flash-attn 失败
-- **云端实例当前无法连接**（Connection refused），恢复后按第 9 节重启
+- ✅ **阶段 1 代码修复（任务 A–I）**：完成，commit `6ea5afc`
+- ✅ **阶段 2 冒烟测试**：通过（vicuna 极小数据全链路，冒烟值 OP=0.3523/BWT=0.0504，不代表正式结果）
+- ✅ **阶段 3 恢复 llama2 0.10 baseline**：验证通过 OP=0.5443/BWT=0.0770，补 manifest（`validated_legacy_run`）+ `.complete`
+- ✅ **三个模型已下载完成**：llama2（26G）/ vicuna（13G）/ baichuan（14G）
+- ⏳ **阶段 4 正式实验**：待开始。llama2 0.08 因 checkpoint 随 `/dev/shm` 重启丢失，需整组重训（不混合新旧预测）
 
 ## 6. 已修复的问题（本次全部完成）
 
@@ -123,11 +124,12 @@ watcher.sh（等 ratio_0.10 的 .complete）
 
 ## 8. 尚未解决 / 潜在风险
 
-1. **磁盘满**：`/dev/shm` 仅 200GB。**根治**：`mount -o remount,size=400G /dev/shm`（1TB 内存足够），属运行时操作非代码。
+1. **磁盘满（无法扩容）**：`/dev/shm` 仅 200GB，且 k8s 容器无 mount 特权（`mount -o remount` 已尝试并失败）。**缓解**：代码已加「每组成功后及时清理 checkpoint + fail-fast」，200GB 已够用（正常峰值 185G，ratio_0.10 当初即 200G 下跑通）。
 2. **baichuan 换 eager 后显存未验证**：7B 全参 + eager + 长序列 1024 在 4×A100-80GB 大概率可行，未实测。
-3. **vicuna 从未成功训练过**：第一次就因磁盘满 NCCL 挂了，重下后需先验证。
+3. **vicuna 正式数据未验证**：已通过极小数据冒烟测试（全链路 OK），但正式 5000 样本未跑过，需第一组正式 canary 实测。
 4. **run_manifest 的 resume 校验是基础版**：记录了配置和 run ID，但尚未实现「推理前自动比对 manifest 与当前配置拒绝不匹配」的完整逻辑（当前靠 .complete 判定跳过，未做逐字段比对）。
 5. **云端非 git 仓库**：代码靠 scp 同步，`git_commit` 在云端记录为 `unknown`（除非云端也 git init）。
+6. **推理偏慢（待实测）**：冒烟测试短任务 6-13s/step、长任务（MeetingBank/Py150）30-56s/step，vs 训练 2.1s/step。疑 flash-attn 推理未完全生效或 vicuna 特性；待阶段 4 llama2 正式推理实测，必要时 profiling 优化（batch 16、max_ans_len 512、temperature 采样）。
 
 ## 9. 恢复实验的操作步骤（实例恢复后，按此顺序）
 

@@ -21,8 +21,8 @@ echo "[watcher] first run complete -> launching full sweep"
 cd /root/TRACE
 export PATH=/root/miniconda3/bin:$PATH
 export CUDA_HOME=/usr/local/cuda
-export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-export LIBRARY_PATH=/usr/local/cuda/lib64:$LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
+export LIBRARY_PATH=/usr/local/cuda/lib64:${LIBRARY_PATH:-}
 export HF_ENDPOINT=https://hf-mirror.com
 export GPUS="0,1,2,3"
 export OUT_ROOT=/dev/shm/outputs

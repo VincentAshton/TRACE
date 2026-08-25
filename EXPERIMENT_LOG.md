@@ -72,9 +72,11 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 
 （待全部跑完后填写：每个模型 OP/BWT 首次跌破 10% 基线的最大比例，即最接近 10% 的那个下降比例）
 
-## 9. 运行状态（快照 2026-08-24）
+## 9. 运行状态（快照 2026-08-25）
 
-- 实验**进行中**：llama2-7b-chat ratio=0.10 已于 2026-08-24 22:00 完成（**OP=0.544 / BWT=+0.077**，论文 0.555 / 0.026），watcher 22:01 触发 sweep，正在训练 ratio=0.08（新顺序 0.10→0.08→0.05→0.02→0.01）。
-- 训练完成后自动流程：4 卡并行推理 → 聚合 op_bwt.json → 守门脚本 watcher.sh 自动启动剩余 14 组扫描（3 模型 × 5 比例，含本组）。
+- 实验**已暂停**：只有 llama2-7b-chat ratio=0.10 完成（**OP=0.544 / BWT=+0.077**，论文 0.555 / 0.026）。
+- ratio=0.08 训练 8 轮完成但推理 round 7 失败（数据缓存并发写坏）；其余 13 组因 /dev/shm 磁盘满 + baichuan flash-attn bug 全线失败。
+- 3 个 bug 已定位并修复，代码已 push（详见 [HANDOFF.md](HANDOFF.md)）。
+- 云端实例当前无法连接（Connection refused），恢复后按 HANDOFF.md 第 9 节步骤重启实验。
 - 云端关键路径：模型 `/dev/shm/hf/`，输出 `/dev/shm/outputs/`，结果持久化 `/root/results/`。
 - 运行细节与命令见 [RUNBOOK.md](RUNBOOK.md)。

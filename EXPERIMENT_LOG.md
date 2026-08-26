@@ -154,13 +154,17 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 - `run_replay_fast.sh` / `run_infer_parallel.sh`：`DATASETS`、`NUM_EPOCHS` 改为环境变量驱动（默认仍为 8 任务，旧配置不变）。
 - 推理 round 数、SPLITS 划分、`NEXPECT`（预测数校验）按任务数动态计算：4 任务 = 10 项下三角矩阵（N×(N+1)/2 = 10），8 任务默认 36 项不受影响。
 
-### 10.5 结果存放与已知隐患
+### 10.5 结果存放
 
-- 云端：`/root/results/llama2-7b-chat/ratio_0.01/`（op_bwt.json/txt + run_manifest + summary + .complete + 10 预测）
-- 本地：`results/llama2-7b-chat/ratio_0.01/`（完成后 scp 拉回）
+- 云端：`/root/results/llama2-7b-chat/ratio_0.01_4task/`（op_bwt.json/txt + run_manifest + summary + .complete + 10 预测）
+- 本地：`results/llama2-7b-chat/ratio_0.01_4task/`（完成后 scp 拉回）
 - GitHub：仅上传关键结果（op_bwt.json/txt + summary + manifest + .complete，预测全文留本地）
 
-> ⚠️ **路径冲突隐患**：结果目录名只含 `ratio_0.01`，不含任务数。未来主实验跑 8 任务的 llama2 0.01 时会落回同一目录，且持久化逻辑 `rm -rf` 旧目录，**会覆盖本组 4 任务结果**。`run_manifest.json` 的 `datasets` 字段可区分二者，但文件会被覆盖。**处理建议（待导师/学长定）**：本组结果落盘后改目录名 `ratio_0.01_4task` 归档，或 8 任务 0.01 启动前先归档本组目录。
+> 结果目录名固化「任务数」维度，4 任务与 8 任务作为同一实验的两个版本并存、互不覆盖：
+> - 8 任务 → `ratio_0.01`（保持原名，兼容已有 `ratio_0.10` / `ratio_0.08`）
+> - 非 8 任务（如 4 任务）→ `ratio_0.01_4task`
+>
+> 目录规则见 `run_replay_fast.sh` / `run_infer_parallel.sh` 的 `DIR_SUFFIX` 逻辑；`run_manifest.json` 的 `datasets`/`ntasks` 字段作二次区分。
 
 ### 10.6 状态
 

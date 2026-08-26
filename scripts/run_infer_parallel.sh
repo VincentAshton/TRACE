@@ -20,7 +20,13 @@ INFER_BATCH="${INFER_BATCH:-16}"
 
 DATASETS="${DATASETS:-C-STANCE,FOMC,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten}"
 NTASKS=$(echo "$DATASETS" | tr ',' '\n' | grep -c .)
-OUT_DIR="$OUT_ROOT/$MODEL_SHORT/ratio_$RATIO"
+# 结果目录名：8 任务保持原名（兼容已有 ratio_0.10/0.08），非 8 任务加 _Ntask 后缀区分「同一实验的不同版本」
+if [ "$NTASKS" -eq 8 ]; then
+  DIR_SUFFIX="ratio_$RATIO"
+else
+  DIR_SUFFIX="ratio_${RATIO}_${NTASKS}task"
+fi
+OUT_DIR="$OUT_ROOT/$MODEL_SHORT/$DIR_SUFFIX"
 port=$(shuf -i25000-30000 -n1)
 
 echo "========== INFER (parallel 4-GPU, batch=$INFER_BATCH): $MODEL_SHORT ratio=$RATIO =========="
@@ -82,7 +88,7 @@ python "$REPO_DIR/utils/aggregate_op_bwt.py" \
 
 echo "========== PERSIST RESULTS (verified) =========="
 PERSIST_ROOT="${PERSIST_ROOT:-/root/results}"
-PERSIST_DIR="$PERSIST_ROOT/$MODEL_SHORT/ratio_$RATIO"
+PERSIST_DIR="$PERSIST_ROOT/$MODEL_SHORT/$DIR_SUFFIX"
 PERSIST_TMP="$PERSIST_DIR.tmp.$$"
 
 # 0) 空间预检：/root/results 需有足够空间（保守要求 >= 1GB，实际结果仅几 MB）

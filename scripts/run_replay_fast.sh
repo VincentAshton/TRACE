@@ -21,7 +21,14 @@ OFFLOAD="${OFFLOAD:-}"
 export ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 
 DATASETS="${DATASETS:-C-STANCE,FOMC,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten}"
-OUT_DIR="$OUT_ROOT/$MODEL_SHORT/ratio_$RATIO"
+NTASKS=$(echo "$DATASETS" | tr ',' '\n' | grep -c .)
+# 结果目录名：8 任务保持原名（兼容已有 ratio_0.10/0.08），非 8 任务加 _Ntask 后缀区分「同一实验的不同版本」
+if [ "$NTASKS" -eq 8 ]; then
+  DIR_SUFFIX="ratio_$RATIO"
+else
+  DIR_SUFFIX="ratio_${RATIO}_${NTASKS}task"
+fi
+OUT_DIR="$OUT_ROOT/$MODEL_SHORT/$DIR_SUFFIX"
 mkdir -p "$OUT_DIR"
 
 # 失败状态标记：任何未捕获错误写 .failed（记录时间+模型+比例），便于快速识别失败组
@@ -67,9 +74,9 @@ port=$(shuf -i25000-30000 -n1)
 # ---- run manifest：记录 run ID + 冻结配置 + 环境版本，供 resume/校验使用 ----
 GIT_COMMIT="$(cd "$REPO_DIR" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 python - "$OUT_DIR/run_manifest.json" "$MODEL_SHORT" "$MODEL_PATH" "$RATIO" \
-    "$GIT_COMMIT" "$GPUS" "$ATTN_IMPL" "$NUM_EPOCHS" "$LR" "$MAX_PROMPT_LEN" "$MAX_ANS_LEN" "$ZERO_STAGE" <<'PY'
+    "$GIT_COMMIT" "$GPUS" "$ATTN_IMPL" "$NUM_EPOCHS" "$LR" "$MAX_PROMPT_LEN" "$MAX_ANS_LEN" "$ZERO_STAGE" "$DATASETS" "$NTASKS" <<'PY'
 import json, sys, time, os
-(_, out, model, mpath, ratio, commit, gpus, attn, epochs, lr, mpl, mal, zero) = sys.argv
+(_, out, model, mpath, ratio, commit, gpus, attn, epochs, lr, mpl, mal, zero, datasets, ntasks) = sys.argv
 import torch, transformers, deepspeed
 manifest = {
     "run_id": f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}",
@@ -80,6 +87,7 @@ manifest = {
     "per_device_train_batch_size": 4, "gradient_accumulation_steps": 16,
     "num_train_epochs": epochs, "learning_rate": float(lr),
     "max_prompt_len": int(mpl), "max_ans_len": int(mal), "zero_stage": int(zero),
+    "datasets": datasets, "ntasks": int(ntasks),
     "attention": attn,
     "torch": torch.__version__, "cuda": torch.version.cuda,
     "transformers": transformers.__version__, "deepspeed": deepspeed.__version__,

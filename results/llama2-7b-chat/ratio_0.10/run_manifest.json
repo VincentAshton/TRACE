@@ -1,0 +1,23 @@
+{
+  "run_id": "legacy-20260824-llama2-7b-ratio010",
+  "validated_legacy_run": true,
+  "validated_at": "2026-08-25T14:19:33",
+  "note": "2026-08-24 \u5728 /dev/shm \u8bad\u7ec3\u5b8c\u6210\uff0c\u7ed3\u679c\u5df2\u6301\u4e45\u5316\u5230 /root/results\uff1b\u91cd\u542f\u540e /dev/shm \u6e05\u7a7a\uff0c\u4ec5\u4fdd\u7559\u9884\u6d4b\u4e0e\u6307\u6807\u3002",
+  "git_commit": "unknown",
+  "model": "llama2-7b-chat",
+  "model_path": "/dev/shm/hf/Llama-2-7b-chat-hf",
+  "ratio": "0.10",
+  "seed": 1234,
+  "gpus": "0,1,2,3",
+  "per_device_train_batch_size": 4,
+  "gradient_accumulation_steps": 16,
+  "num_train_epochs": "5,3,7,5,3,5,5,7",
+  "learning_rate": 1e-05,
+  "max_prompt_len": 1024,
+  "max_ans_len": 512,
+  "zero_stage": 3,
+  "attention": "flash_attention_2",
+  "torch": "2.3.0+cu121",
+  "transformers": "4.44.2",
+  "deepspeed": "0.14.4"
+}

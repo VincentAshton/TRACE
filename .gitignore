@@ -162,5 +162,7 @@ cython_debug/
 # Experiment data & outputs (large / regenerable, not source code)
 # 用前导 / 只匹配仓库根目录，避免误伤 utils/data/ 等源代码目录
 /data/
-/results/
 /outputs/
+
+# 结果目录：忽略预测全文（~1MB×72 太大），保留关键汇总结果（op_bwt/summary/manifest/.complete）供查看
+/results/**/predictions/

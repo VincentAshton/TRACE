@@ -1,0 +1,22 @@
+{
+  "run_id": "20260825-152540-5515",
+  "started_at": "2026-08-25T15:25:40",
+  "git_commit": "unknown",
+  "model": "llama2-7b-chat",
+  "model_path": "/dev/shm/hf/Llama-2-7b-chat-hf",
+  "ratio": "0.08",
+  "seed": 1234,
+  "gpus": "0,1,2,3",
+  "per_device_train_batch_size": 4,
+  "gradient_accumulation_steps": 16,
+  "num_train_epochs": "5,3,7,5,3,5,5,7",
+  "learning_rate": 1e-05,
+  "max_prompt_len": 1024,
+  "max_ans_len": 512,
+  "zero_stage": 3,
+  "attention": "flash_attention_2",
+  "torch": "2.3.0+cu121",
+  "cuda": "12.1",
+  "transformers": "4.44.2",
+  "deepspeed": "0.14.4"
+}

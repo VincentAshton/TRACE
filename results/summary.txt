@@ -1,0 +1,35 @@
+==============================================================================
+MODEL: llama2-7b-chat
+  baseline (own 10% run): OP = 54.4   BWT = +7.7%
+  paper 10% (reference): OP = 55.5   BWT = +2.6%
+------------------------------------------------------------------------------
+   ratio |     OP |     dOP |      BWT |     dBWT | below?
+    0.08 |              (missing)
+    0.05 |              (missing)
+    0.02 |              (missing)
+    0.01 |              (missing)
+
+==============================================================================
+MODEL: vicuna-7b
+  baseline (paper 10% (own 10% missing)): OP = 55.3   BWT = +0.2%
+  paper 10% (reference): OP = 55.3   BWT = +0.2%
+------------------------------------------------------------------------------
+   ratio |     OP |     dOP |      BWT |     dBWT | below?
+    0.08 |              (missing)
+    0.05 |              (missing)
+    0.02 |              (missing)
+    0.01 |              (missing)
+
+==============================================================================
+MODEL: baichuan2-7b
+  baseline (paper 10% (own 10% missing)): OP = 51.7   BWT = +1.1%
+  paper 10% (reference): OP = 51.7   BWT = +1.1%
+------------------------------------------------------------------------------
+   ratio |     OP |     dOP |      BWT |     dBWT | below?
+    0.08 |              (missing)
+    0.05 |              (missing)
+    0.02 |              (missing)
+    0.01 |              (missing)
+
+==============================================================================
+Drop threshold = largest ratio (closest to 10%) where OP or BWT falls below baseline.

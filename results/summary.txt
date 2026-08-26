@@ -1,35 +1,41 @@
 ==============================================================================
 MODEL: llama2-7b-chat
   baseline (own 10% run): OP = 54.4   BWT = +7.7%
-  paper 10% (reference): OP = 55.5   BWT = +2.6%
+  paper 10% (reference only): OP = 55.5   BWT = +2.6%
+  tolerance EPS = 0.005 (0.5 个百分点)
 ------------------------------------------------------------------------------
    ratio |     OP |     dOP |      BWT |     dBWT | below?
-    0.08 |              (missing)
+    0.08 |   54.2 |    -0.2 |     +6.0 |     -1.7 | BWT↓
     0.05 |              (missing)
     0.02 |              (missing)
     0.01 |              (missing)
+  [threshold] 下降阈值 = 0.08（离 10% 最近且 OP 或 BWT 跌破 baseline 超过 0.005）
 
 ==============================================================================
 MODEL: vicuna-7b
-  baseline (paper 10% (own 10% missing)): OP = 55.3   BWT = +0.2%
-  paper 10% (reference): OP = 55.3   BWT = +0.2%
+  baseline (own 10% run): MISSING -> 无法判定下降阈值
+  paper 10% (reference only): OP = 55.3   BWT = +0.2%
+  tolerance EPS = 0.005 (0.5 个百分点)
 ------------------------------------------------------------------------------
    ratio |     OP |     dOP |      BWT |     dBWT | below?
     0.08 |              (missing)
     0.05 |              (missing)
     0.02 |              (missing)
     0.01 |              (missing)
+  [threshold] 跳过：本地 10% baseline 缺失，不判定
 
 ==============================================================================
 MODEL: baichuan2-7b
-  baseline (paper 10% (own 10% missing)): OP = 51.7   BWT = +1.1%
-  paper 10% (reference): OP = 51.7   BWT = +1.1%
+  baseline (own 10% run): MISSING -> 无法判定下降阈值
+  paper 10% (reference only): OP = 51.7   BWT = +1.1%
+  tolerance EPS = 0.005 (0.5 个百分点)
 ------------------------------------------------------------------------------
    ratio |     OP |     dOP |      BWT |     dBWT | below?
     0.08 |              (missing)
     0.05 |              (missing)
     0.02 |              (missing)
     0.01 |              (missing)
+  [threshold] 跳过：本地 10% baseline 缺失，不判定
 
 ==============================================================================
-Drop threshold = largest ratio (closest to 10%) where OP or BWT falls below baseline.
+Drop threshold = largest ratio (closest to 10%) where OP or BWT falls below the OWN 10% baseline by more than EPS.

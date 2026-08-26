@@ -8,11 +8,16 @@
 
 复现论文中的 Replay 训练方法，并在 3 个 7B 模型（LLaMA-2-7B-chat、Vicuna-7B、Baichuan2-7B）上扫描低于 10% 的回放比例（0.01 / 0.02 / 0.05 / 0.08，以 10% 为基线），找出使 OP（Overall Performance）与 BWT（Backward Transfer）首次跌破基线的「下降阈值」。
 
+**快速验证实验（4任务 + 0.01）**
+
+在主实验 15 组扫描之外，新增一组快速验证：llama2-7b-chat × TRACE 前 4 任务（C-STANCE/FOMC/MeetingBank/Py150）× ratio=0.01，与 8 任务 10% 基线（OP=0.544 / BWT=+0.077）比较，快速判断下降阈值是否落在更低的回放比例。详细设计与口径说明见 [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) 第 10 节。
+
 **工程改动**
 
 - 依赖适配：transformers / datasets / evaluate 新版，fuzzywuzzy→rapidfuzz
 - 修复：ZeRO-3 checkpoint 保存目录、flash-attn fp32 回退、bf16 加载（修 OOM）
 - 提速：FlashAttention-2、per_device 4、4 卡并行推理（batch 16）
+- 参数化：`DATASETS`/`NUM_EPOCHS` 环境变量驱动（默认仍 8 任务），推理 round 与结果校验数按任务数动态计算，支持 4 任务快速验证
 - 新增脚本：并行推理、OP/BWT 聚合、15 组扫描、守门自动续跑
 
 **关键文档**

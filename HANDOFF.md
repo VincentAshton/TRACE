@@ -83,14 +83,16 @@ watcher.sh（等 ratio_0.10 的 .complete）
 
 **完成判定 = `.complete` 存在**（不是 `op_bwt.json` 存在）。`.complete` 是整个流程最后生成的文件。
 
-## 5. 当前进度（2026-08-26）
+## 5. 当前进度（2026-08-27）
 
 - ✅ **阶段 1 代码修复（任务 A–I）**：完成，commit `6ea5afc`
 - ✅ **阶段 2 冒烟测试**：通过（vicuna 极小数据全链路，冒烟值 OP=0.3523/BWT=0.0504）
 - ✅ **阶段 3 恢复 llama2 0.10 baseline**：OP=0.5443/BWT=0.0770，补 manifest + `.complete`
-- ✅ **三个模型已下载完成**：llama2（26G）/ vicuna（13G）/ baichuan（14G）
+- ✅ **llama2 模型已下载**（26G；vicuna/baichuan 本次未下载，新实验只需 llama2）
 - ✅ **llama2-7b-chat ratio=0.08 完成**：OP=0.5422/BWT=0.0603（对比基线 OP -0.002 持平、BWT -0.017 略降，8% 未现明显下降）
-- ⏳ **阶段 4 剩余 12 组**：llama2 0.05/0.02/0.01 + vicuna 5 组 + baichuan 5 组
+- ✅ **参数化改造**：`DATASETS`/`NUM_EPOCHS` 环境变量驱动 + 推理 round/校验数按任务数动态，commit `81af5c4`
+- 🔄 **阶段 5：4任务+0.01 快速验证实验**（llama2 × 前4任务 × 0.01，独立于 15 组）进行中，训练 2026-08-27 启动
+- ⏸️ **阶段 4 主实验（剩余 12 组）**：llama2 0.05/0.02/0.01 + vicuna 5 组 + baichuan 5 组，等导师/学长验证 0.08 后继续
 
 ## 6. 已修复的问题（本次全部完成）
 
@@ -131,6 +133,7 @@ watcher.sh（等 ratio_0.10 的 .complete）
 4. **run_manifest 的 resume 校验是基础版**：记录了配置和 run ID，但尚未实现「推理前自动比对 manifest 与当前配置拒绝不匹配」的完整逻辑（当前靠 .complete 判定跳过，未做逐字段比对）。
 5. **云端非 git 仓库**：代码靠 scp 同步，`git_commit` 在云端记录为 `unknown`（除非云端也 git init）。
 6. **推理偏慢（已查明，非 bug）**：实测 llama2 推理 10-28s/step（短任务 ~10s、长任务 ~25-28s）。经查证 flash-attn 在推理时**已生效**（ATTN_IMPL 正确传递 + 日志有 Flash Attention 加载记录），慢的真正原因是：① 512 token 自回归生成的固有开销（`max_ans_len=512` 官方固定配置，无法压缩）；② `infer_single.py` 每 round 重复加载基础模型 + `torch.load` checkpoint + 逐参数 copy（8 次，约 16-24 分钟冗余）。可选优化：推理复用模型（省 ~20min/组 × 15 组 ≈ 5h），但改动有风险，待判断是否值得。
+7. **4任务 0.01 结果目录与未来 8任务 0.01 冲突**：结果目录名只含 `ratio_0.01`（不含任务数），未来跑 8 任务 llama2 0.01 会 `rm -rf` 覆盖本组 4 任务结果；`run_manifest.json` 的 `datasets` 字段可区分二者。**处理**：本组结果落盘后改目录名 `ratio_0.01_4task` 归档，或 8 任务 0.01 启动前先归档。
 
 ## 9. 恢复实验的操作步骤（实例恢复后，按此顺序）
 

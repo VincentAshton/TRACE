@@ -31,6 +31,29 @@ OP（Overall Performance，整体性能）和 BWT（Backward Transfer，向后�
 - **回放比例**：0.10（基线）、0.08、0.05、0.02、0.01
 - **组合**：3 模型 × 5 比例 = **15 组**
 
+### 实验数据集（TRACE 基准：8 任务 + Lima 回放）
+
+数据取自 TRACE 官方仓库（https://github.com/BeyonderXX/TRACE，论文 arXiv:2310.06762），
+位于 `data/extracted/TRACE-Benchmark/LLM-CL-Benchmark_5000/`。每个任务目录含
+`train.json`（5000 条）/ `eval.json` / `test.json`（2000 条），共 8 个任务 + 1 个 replay 数据集。
+
+| 任务 | 类别 | 原始数据集来源 | 主指标 |
+|---|---|---|---|
+| C-STANCE | 多语言（中文立场检测） | C-STANCE (Zhao et al., 2023)，新浪微博，target-based 子任务 | accuracy |
+| FOMC | 领域特定（金融） | FOMC (Shah et al., 2023)，鹰派-鸽派分类 | accuracy |
+| MeetingBank | 领域特定（会议摘要） | MeetingBank (Hu et al., 2023)，市议会会议摘要 | rouge-L |
+| Py150 | 代码补全 | CodeXGLUE / Py150 (Lu et al., 2021)，行级代码补全 | similarity |
+| ScienceQA | 领域特定（科学问答） | ScienceQA (Lu et al., 2022)，中小学科学多跳问答 | accuracy |
+| NumGLUE-cm | 数学推理 | NumGLUE (Mishra et al., 2022) 任务 1，算术推理 | accuracy |
+| NumGLUE-ds | 数学推理 | NumGLUE (Mishra et al., 2022) 任务 2，算术推理 | accuracy |
+| 20Minuten | 多语言（德语摘要） | 20Minuten (Rios et al., 2021)，瑞士新闻文本简化 | sari |
+| Lima | Replay 回放数据集 | LIMA (Zhou et al., 2023)，指令数据（300 prompt） | — |
+
+说明：
+- **任务顺序**：8 个任务按官方顺序依次学习，每学完一个任务额外 replay 1 个 epoch（历史任务 `past_task_ratio` 子集 + 完整 Lima）。
+- **数据选取原则**：遵循 TRACE 论文三类原则——领域特定（ScienceQA/FOMC/MeetingBank）、多语言（C-STANCE/20Minuten）、代码补全（Py150）、数学推理（NumGLUE 两任务）。
+- **采样规模**：每任务随机抽 5000 训练 + 2000 测试（TRACE 论文 Table 4 的均衡版本，共 40000 训练 + 16000 测试）。
+
 ## 4. 指标定义（论文 Section 3）
 
 记 R[i][j] 为「第 i 轮训练结束后，模型在第 j 个任务上的得分」，T=8 为任务数：

@@ -20,7 +20,7 @@ ZERO_STAGE="${ZERO_STAGE:-3}"
 OFFLOAD="${OFFLOAD:-}"
 export ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 
-DATASETS="C-STANCE,FOMC,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten"
+DATASETS="${DATASETS:-C-STANCE,FOMC,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten}"
 OUT_DIR="$OUT_ROOT/$MODEL_SHORT/ratio_$RATIO"
 mkdir -p "$OUT_DIR"
 

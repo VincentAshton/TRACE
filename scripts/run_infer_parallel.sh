@@ -18,18 +18,29 @@ MAX_PROMPT_LEN="${MAX_PROMPT_LEN:-1024}"
 MAX_ANS_LEN="${MAX_ANS_LEN:-512}"
 INFER_BATCH="${INFER_BATCH:-16}"
 
-DATASETS="C-STANCE,FOMC,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten"
+DATASETS="${DATASETS:-C-STANCE,FOMC,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten}"
+NTASKS=$(echo "$DATASETS" | tr ',' '\n' | grep -c .)
 OUT_DIR="$OUT_ROOT/$MODEL_SHORT/ratio_$RATIO"
 port=$(shuf -i25000-30000 -n1)
 
 echo "========== INFER (parallel 4-GPU, batch=$INFER_BATCH): $MODEL_SHORT ratio=$RATIO =========="
-# (gpu_id, round_start, round_end)
-SPLITS=(
-  "0 0 4"
-  "1 4 6"
-  "2 6 7"
-  "3 7 8"
-)
+# (gpu_id, round_start, round_end)；按任务数动态划分到 4 卡（8 任务保持原特调划分）
+if [ "$NTASKS" -eq 8 ]; then
+  SPLITS=(
+    "0 0 4"
+    "1 4 6"
+    "2 6 7"
+    "3 7 8"
+  )
+else
+  SPLITS=()
+  for gpu in 0 1 2 3; do
+    rs=$(( gpu * NTASKS / 4 )); re=$(( (gpu + 1) * NTASKS / 4 ))
+    if [ "$rs" -lt "$re" ]; then
+      SPLITS+=("$gpu $rs $re")
+    fi
+  done
+fi
 pids=()
 for s in "${SPLITS[@]}"; do
   set -- $s
@@ -95,10 +106,11 @@ mkdir -p "$PERSIST_TMP"
 cp "$OUT_DIR/op_bwt.json" "$OUT_DIR/op_bwt.txt" "$OUT_DIR/run_manifest.json" "$PERSIST_TMP/"
 cp -r "$OUT_DIR/predictions" "$PERSIST_TMP/"
 
-# 3) 校验预测文件数量 == 36（8 任务完整下三角矩阵）
+# 3) 校验预测文件数量 == N*(N+1)/2（下三角矩阵：8 任务=36，4 任务=10）
+NEXPECT=$(( NTASKS * (NTASKS + 1) / 2 ))
 NPRED=$(find "$PERSIST_TMP/predictions" -name "results-*.json" 2>/dev/null | wc -l)
-if [ "$NPRED" -ne 36 ]; then
-  echo "[ERROR] 预测文件数 $NPRED != 36，持久化中止，保留 checkpoint"
+if [ "$NPRED" -ne "$NEXPECT" ]; then
+  echo "[ERROR] 预测文件数 $NPRED != $NEXPECT（$NTASKS 任务下三角矩阵），持久化中止，保留 checkpoint"
   exit 1
 fi
 
@@ -107,14 +119,14 @@ rm -rf "$PERSIST_DIR"
 mv "$PERSIST_TMP" "$PERSIST_DIR"
 echo "[persist] 结果已持久化到 $PERSIST_DIR"
 
-# 5) 回读校验：确认持久化目录完整（op_bwt 可解析 + 预测数==36），防止 cp/mv 静默丢文件
-python - "$PERSIST_DIR/op_bwt.json" "$PERSIST_DIR/predictions" <<'PY'
+# 5) 回读校验：确认持久化目录完整（op_bwt 可解析 + 预测数==NEXPECT），防止 cp/mv 静默丢文件
+python - "$PERSIST_DIR/op_bwt.json" "$PERSIST_DIR/predictions" "$NEXPECT" <<'PY'
 import json, sys, os, glob
-op, preds = sys.argv[1], sys.argv[2]
+op, preds, nexp = sys.argv[1], sys.argv[2], int(sys.argv[3])
 d = json.load(open(op))
 assert d.get("op") is not None and d.get("bwt") is not None, "持久化 op_bwt.json 缺 op/bwt"
 n = len(glob.glob(os.path.join(preds, "results-*.json")))
-assert n == 36, f"持久化预测文件数 {n} != 36"
+assert n == nexp, f"持久化预测文件数 {n} != {nexp}"
 print(f"[persist] 回读校验通过: OP={d['op']:.4f} BWT={d['bwt']:.4f}, {n} predictions")
 PY
 
